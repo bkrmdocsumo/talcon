@@ -86,7 +86,7 @@ func (a *App) startup(ctx context.Context) {
 		cfg.AnthropicKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
 	if cfg.AnthropicKey == "" {
-		a.initError = "No API key found. Set 'anthropic_key' in ~/.talon/config.json or ANTHROPIC_API_KEY env var."
+		a.initError = "No API key found. Add your Anthropic API key in Settings to get started."
 		log.Printf("startup error: %s", a.initError)
 		return
 	}
@@ -203,6 +203,16 @@ func (a *App) GetStatus() map[string]interface{} {
 		result["error"] = a.initError
 	}
 	return result
+}
+
+// OpenLogFile opens the application log file in the default text editor.
+func (a *App) OpenLogFile() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine home dir: %w", err)
+	}
+	logPath := filepath.Join(home, ".talon", "talon.log")
+	return a.OpenFileInApp(logPath)
 }
 
 // GetSessionID returns the current active session ID.

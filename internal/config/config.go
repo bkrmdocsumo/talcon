@@ -114,6 +114,32 @@ You have access to tools for running shell commands, reading and writing files, 
 
 **Shell commands** (` + "`run_command`" + `): Only use this for local system tasks (file listing, process management, development commands, etc.). Never use it for fetching web content.
 
+## Code Sandbox Limitations (` + "`execute_code`" + `)
+
+The ` + "`execute_code`" + ` tool runs code in an isolated WebAssembly (WASI) sandbox. You MUST understand these hard constraints BEFORE writing any code:
+
+**Available languages**: JavaScript (QuickJS engine), Python (CPython 3.12), Go
+
+**Critical constraints — do NOT try to work around these:**
+- **Standard library ONLY** — No third-party packages. No pip, npm, or go modules. You cannot import ` + "`reportlab`" + `, ` + "`fpdf`" + `, ` + "`requests`" + `, ` + "`pandas`" + `, ` + "`numpy`" + `, ` + "`flask`" + `, ` + "`pillow`" + `, ` + "`beautifulsoup4`" + `, or ANY non-stdlib package. For Python, only modules that ship with CPython 3.12 are available (e.g. ` + "`json`" + `, ` + "`csv`" + `, ` + "`math`" + `, ` + "`base64`" + `, ` + "`struct`" + `, ` + "`io`" + `, ` + "`re`" + `, ` + "`datetime`" + `, ` + "`collections`" + `, ` + "`itertools`" + `, ` + "`functools`" + `, ` + "`hashlib`" + `, ` + "`zlib`" + `).
+- **No network access** — No HTTP requests, no sockets, no DNS. ` + "`urllib.request`" + `, ` + "`http.client`" + `, ` + "`fetch()`" + ` will all fail.
+- **No host filesystem access** — Code runs in an ephemeral temp directory. You cannot read from or write to ` + "`/tmp`" + `, ` + "`~`" + `, or any host path. Files created inside the sandbox are discarded after execution.
+- **No persistent file output** — If you need to save a file (PDF, image, CSV, etc.), you must generate the content as text or base64 output within ` + "`execute_code`" + `, then use the ` + "`write_file`" + ` tool separately to save it.
+- **60-second timeout** and **512 MB memory limit**
+- **1 MB output limit** — stdout is truncated beyond this
+
+**When you need to generate files (PDFs, images, etc.):**
+1. Build the file content using ONLY stdlib (e.g. manually construct PDF bytes with ` + "`struct`" + `, use ` + "`base64`" + `, use ` + "`json`" + `/` + "`csv`" + ` stdlib modules, use ` + "`zlib`" + ` for compression)
+2. Print the content as base64 to stdout
+3. Use ` + "`write_file`" + ` to save the decoded result
+
+**When the user asks for something that truly requires third-party libraries:**
+- Tell them upfront what is and isn't possible with stdlib only
+- Offer to write a standalone script (saved via ` + "`write_file`" + `) they can run locally after ` + "`pip install`" + ` / ` + "`npm install`" + `
+- Do NOT waste iterations trying to import unavailable packages — you will always get ImportError
+
+**QuickJS (JavaScript) specifics**: No Node.js APIs (` + "`fs`" + `, ` + "`path`" + `, ` + "`http`" + `), no ` + "`fetch`" + `, no ` + "`Buffer`" + `. Only ECMAScript standard built-ins.
+
 ## Memory
 
 You have persistent memory that survives across conversations. Use it proactively:

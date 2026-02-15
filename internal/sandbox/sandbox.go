@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	defaultTimeout    = 30 * time.Second
-	defaultMaxMemMB   = 256
-	defaultMaxOutput  = 10 * 1024 // 10KB
+	defaultTimeout    = 60 * time.Second
+	defaultMaxMemMB   = 512
+	defaultMaxOutput  = 1024 * 1024 // 1MB
 )
 
 // Config controls the sandbox execution environment.
@@ -180,7 +180,7 @@ func execWasm(ctx context.Context, cfg Config, wasmBytes []byte, args []string, 
 		output += errOut
 	}
 	if len(output) > maxOut {
-		output = output[:maxOut] + "\n... [output truncated at 10KB]"
+		output = output[:maxOut] + "\n... [output truncated at 1MB]"
 	}
 
 	// Determine exit code.

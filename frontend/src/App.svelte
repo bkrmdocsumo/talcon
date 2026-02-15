@@ -278,13 +278,13 @@
       <main class="chat-area" bind:this={chatContainer} on:scroll={handleChatScroll}>
         <div class="chat-container">
           {#if !$ready && $initError}
-            <ErrorBanner message={$initError} />
+            <ErrorBanner message={$initError} on:openSettings={() => showSettings.set(true)} />
           {/if}
 
           {#if $messages.length === 0}
             <WelcomeScreen userName={$userName} />
           {:else}
-            {#each $messages as message (message)}
+            {#each $messages as message, i (i)}
               <ChatMessage {message} agentName={$agentName} />
             {/each}
           {/if}

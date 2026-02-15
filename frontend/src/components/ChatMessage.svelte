@@ -1,4 +1,5 @@
 <script>
+  import { fly } from 'svelte/transition';
   import { renderMarkdown } from '../lib/markdown.js';
   import { formatToolLabel } from '../lib/utils/formatters.js';
   import TypingIndicator from './TypingIndicator.svelte';
@@ -73,6 +74,7 @@
   class="message message-{isTyping ? 'assistant' : message.role}"
   class:message-user={!isTyping && message?.role === 'user'}
   class:error={!isTyping && message?.isError}
+  in:fly={{ y: 6, duration: 200 }}
 >
   <div class="message-avatar">
     {#if !isTyping && message.role === 'user'}
@@ -199,12 +201,6 @@
     display: flex;
     gap: 12px;
     padding: 16px 0;
-    animation: fadeIn 0.2s ease;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
   }
 
   .message + :global(.message) {

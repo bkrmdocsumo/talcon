@@ -24,7 +24,7 @@ func NewSandboxTool(runtimesDir string) *SandboxTool {
 func (t *SandboxTool) Name() string { return "execute_code" }
 
 func (t *SandboxTool) Description() string {
-	return `Execute code in an isolated WebAssembly sandbox. Supported languages: javascript, python, go. The code runs with no network access, no host filesystem access, and a 30-second timeout. Use this tool when you need to run computations, test algorithms, process data, or verify code correctness. For Go code, the host Go toolchain compiles to WASI before execution.`
+	return `Execute code in an isolated WebAssembly sandbox. Supported languages: javascript, python, go. STDLIB ONLY — no third-party packages (no pip/npm/go modules; imports like reportlab, fpdf, requests, pandas, numpy will always fail with ImportError). No network access, no host filesystem access, 60-second timeout, 512MB memory, 1MB output limit. Python uses CPython 3.12 stdlib. JavaScript uses QuickJS (ECMAScript only, no Node.js APIs). To produce files: generate content as base64 stdout, then save with write_file. Use this for computations, algorithms, data processing, or code verification. For Go, the host toolchain compiles to WASI before execution.`
 }
 
 func (t *SandboxTool) Schema() map[string]interface{} {
@@ -66,9 +66,9 @@ func (t *SandboxTool) Execute(ctx context.Context, input json.RawMessage) (strin
 
 	cfg := sandbox.Config{
 		RuntimesDir: t.runtimesDir,
-		Timeout:     30 * time.Second,
-		MaxMemoryMB: 256,
-		MaxOutput:   10 * 1024,
+		Timeout:     60 * time.Second,
+		MaxMemoryMB: 512,
+		MaxOutput:   1024 * 1024, // 1MB
 	}
 
 	result, err := sandbox.Run(ctx, cfg, in.Language, in.Code)

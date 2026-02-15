@@ -1,7 +1,7 @@
 <script>
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
-  import { GetDictationStatus } from '../../wailsjs/go/main/App';
+  import { GetDictationStatus, OpenLogFile } from '../../wailsjs/go/main/App';
 
   export let activeTab = 'chat'; // 'chat' | 'agents' | 'flow'
   export let telegramStatus = 'stopped';
@@ -41,6 +41,14 @@
 
   function setTab(tab) {
     dispatch('tabChange', { tab });
+  }
+
+  async function handleOpenLogs() {
+    try {
+      await OpenLogFile();
+    } catch (err) {
+      console.error('Failed to open log file:', err);
+    }
   }
 </script>
 
@@ -114,6 +122,20 @@
         {/if}
       </div>
     {/if}
+
+    <button
+      class="btn-logs"
+      on:click={handleOpenLogs}
+      title="Open app logs"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/>
+        <line x1="16" y1="17" x2="8" y2="17"/>
+        <polyline points="10 9 9 9 8 9"/>
+      </svg>
+    </button>
 
     <button
       class="btn-telegram"
@@ -194,6 +216,27 @@
     background: var(--bg-secondary);
     color: var(--text-primary);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  /* ─── Log Button ─── */
+  .btn-logs {
+    --wails-draggable: no-drag;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-logs:hover {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
   }
 
   /* ─── Telegram Button ─── */
