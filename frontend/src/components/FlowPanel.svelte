@@ -430,7 +430,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(196, 115, 75, 0.1);
+    background: rgba(14, 240, 216, 0.1);
     border-radius: 10px;
     color: var(--accent);
     flex-shrink: 0;
@@ -656,7 +656,7 @@
   }
 
   .btn-save:hover:not(:disabled) {
-    background: rgba(196, 115, 75, 0.1);
+    background: rgba(14, 240, 216, 0.1);
     color: var(--accent);
   }
 
@@ -668,7 +668,7 @@
     background: var(--accent);
     border: none;
     border-radius: 50%;
-    color: white;
+    color: #000;
     cursor: pointer;
     flex-shrink: 0;
     transition: all 0.2s ease;
@@ -713,8 +713,8 @@
   .mic-spinner {
     width: 22px;
     height: 22px;
-    border: 2.5px solid rgba(255, 255, 255, 0.3);
-    border-top-color: white;
+    border: 2.5px solid rgba(0, 0, 0, 0.2);
+    border-top-color: #000;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }

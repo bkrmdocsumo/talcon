@@ -603,7 +603,7 @@
     background: var(--accent);
     border: none;
     border-radius: 50%;
-    color: white;
+    color: #000;
     cursor: pointer;
     flex-shrink: 0;
     transition: all 0.15s ease;

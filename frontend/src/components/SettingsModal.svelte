@@ -36,7 +36,7 @@
       settingsOpenAIKey = s.openai_key || '';
       settingsDeepgramKey = s.deepgram_key || '';
       settingsHotkeyEnabled = s.hotkey_enabled || false;
-      settingsHotkeyModifier = s.hotkey_modifier || 'left_option';
+      settingsHotkeyModifier = s.hotkey_modifier || 'right_option';
 
       // Check dictation accessibility permission status.
       try {
@@ -512,7 +512,7 @@
     background: var(--accent);
     border: none;
     border-radius: 8px;
-    color: white;
+    color: #000;
     font-size: 13px;
     font-weight: 500;
     font-family: var(--font-sans);

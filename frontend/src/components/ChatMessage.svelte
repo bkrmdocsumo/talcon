@@ -44,6 +44,7 @@
 
 <div
   class="message message-{isTyping ? 'assistant' : message.role}"
+  class:message-user={!isTyping && message?.role === 'user'}
   class:error={!isTyping && message?.isError}
 >
   <div class="message-avatar">
@@ -167,6 +168,20 @@
     border-top: 1px solid rgba(255, 255, 255, 0.04);
   }
 
+  .message.message-user {
+    flex-direction: row-reverse;
+    margin-left: auto;
+    max-width: 85%;
+  }
+
+  .message.message-user .message-body {
+    text-align: right;
+  }
+
+  .message.message-user .message-sender {
+    text-align: right;
+  }
+
   .message-avatar {
     flex-shrink: 0;
   }
@@ -183,14 +198,15 @@
   }
 
   .avatar-user {
-    background: #0ef0d8;
-    color: #000;
+    background: var(--user-accent);
+    color: #fff;
   }
 
   .avatar-assistant {
     background: var(--bg-tertiary);
     color: var(--text-secondary);
-    border: 1px solid var(--border);
+    border: 1px solid var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
     overflow: hidden;
     padding: 0;
   }

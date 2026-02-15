@@ -56,6 +56,8 @@
     height: 40px;
     border-radius: 10px;
     object-fit: cover;
+    border: 2px solid var(--accent);
+    box-shadow: 0 0 12px var(--accent-glow);
   }
 
   @keyframes welcomeFade {

@@ -449,7 +449,7 @@
   .input-container.drag-over {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--accent-glow);
-    background: rgba(196, 115, 75, 0.03);
+    background: rgba(14, 240, 216, 0.03);
   }
 
   textarea {
@@ -604,7 +604,7 @@
     background: var(--accent);
     border: none;
     border-radius: 50%;
-    color: white;
+    color: #000;
     cursor: pointer;
     flex-shrink: 0;
     transition: all 0.15s ease;
@@ -756,7 +756,7 @@
 
   .btn-voice.voice-transcribing {
     color: var(--accent);
-    background: rgba(196, 115, 75, 0.08);
+    background: rgba(14, 240, 216, 0.08);
   }
 
   .voice-rec-dot {

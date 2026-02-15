@@ -32,7 +32,7 @@ type Config struct {
 
 	// Global push-to-talk dictation — hold a modifier key to record, release to transcribe & paste.
 	HotkeyEnabled  bool   `json:"hotkey_enabled"`  // Enable global push-to-talk hotkey
-	HotkeyModifier string `json:"hotkey_modifier"` // "left_option" (default), "right_option", "left_cmd", "right_cmd", "left_ctrl", "right_ctrl"
+	HotkeyModifier string `json:"hotkey_modifier"` // "right_option" (default), "left_option", "left_cmd", "right_cmd", "left_ctrl", "right_ctrl"
 }
 
 // TalonDir returns the resolved path to ~/.talon/.

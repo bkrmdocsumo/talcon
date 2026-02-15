@@ -95,7 +95,7 @@ func ModifierCodeFromString(s string) int {
 }
 
 // DefaultModifier is the default hotkey modifier string.
-const DefaultModifier = "left_option"
+const DefaultModifier = "right_option"
 
 // ─── Public API ───
 

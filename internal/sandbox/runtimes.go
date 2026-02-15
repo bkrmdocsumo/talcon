@@ -20,7 +20,7 @@ const (
 	quickjsFile    = "quickjs.wasm"
 
 	// CPython 3.12.0 compiled to WASI by VMware Labs (~25MB standalone with stdlib bundled).
-	pythonWASMURL = "https://github.com/nicholasgasior/webassembly-language-runtimes/releases/download/python%2F3.12.0%2B20231211-040d5a6/python-3.12.0.wasm"
+	pythonWASMURL = "https://github.com/vmware-labs/webassembly-language-runtimes/releases/download/python%2F3.12.0%2B20231211-040d5a6/python-3.12.0.wasm"
 	pythonFile    = "python.wasm"
 
 	downloadTimeout = 5 * time.Minute

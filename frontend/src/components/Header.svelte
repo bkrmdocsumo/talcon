@@ -51,7 +51,7 @@
     <!-- Placeholder for window controls area on macOS -->
   </div>
 
-  <!-- Center tabs -->
+  <!-- Center tabs (Chat first, then Agents, then Flow) -->
   <nav class="header-tabs">
     <button
       class="tab"
@@ -267,7 +267,7 @@
 
   .dictation-indicator.dict-transcribing {
     color: var(--accent);
-    background: rgba(196, 115, 75, 0.1);
+    background: rgba(14, 240, 216, 0.1);
   }
 
   .dict-rec-dot {
