@@ -4,7 +4,6 @@
   export let progressSteps = [];  // Array of { label, status: 'pending'|'in_progress'|'completed' }
   export let files = [];          // Array of { name, path, type?, size? }
   export let contextTools = [];   // Array of tool name strings
-  export let taskTitle = '';
   const dispatch = createEventDispatcher();
 
   // Section collapse state

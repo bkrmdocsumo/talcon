@@ -1,7 +1,7 @@
 <script>
   import appIcon from '../assets/appicon.png';
 
-  export let agentName = 'Talon';
+  export let userName = '';
 
   // Get time-based greeting
   function getGreeting() {
@@ -11,19 +11,14 @@
     return 'Good evening';
   }
 
-  // Get user name from system (or fallback)
-  function getUserName() {
-    return 'Bikram'; // TODO: get from backend user config
-  }
-
   $: greeting = getGreeting();
-  $: userName = getUserName();
+  $: displayGreeting = userName ? `${greeting}, ${userName}` : greeting;
 </script>
 
 <div class="welcome">
   <h1 class="welcome-heading">
     <img class="welcome-icon" src={appIcon} alt="Talon" />
-    <span>{greeting}, {userName}</span>
+    <span>{displayGreeting}</span>
   </h1>
 </div>
 

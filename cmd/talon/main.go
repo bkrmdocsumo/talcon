@@ -56,9 +56,18 @@ func main() {
 		log.Fatalf("agent %q not found in config", *agentName)
 	}
 
+	// Resolve OpenAI key for GPT models.
+	openaiKey := cfg.OpenAIKey
+	if openaiKey == "" {
+		openaiKey = os.Getenv("OPENAI_API_KEY")
+	}
+
 	// Initialise core components.
 	sessionMgr := session.NewManager(baseDir)
-	llmClient := llm.NewClient(cfg.AnthropicKey, agentCfg.Model)
+	llmClient, err := llm.NewClientForModel(agentCfg.Model, cfg.AnthropicKey, openaiKey)
+	if err != nil {
+		log.Fatalf("create llm client: %v", err)
+	}
 	toolRegistry := tools.NewRegistry()
 
 	// Register standard tools (command, file, memory).

@@ -3,7 +3,6 @@
   import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
   import { GetDictationStatus } from '../../wailsjs/go/main/App';
 
-  export let agentName = 'Talon';
   export let activeTab = 'chat'; // 'chat' | 'agents' | 'flow'
   export let telegramStatus = 'stopped';
   export let telegramToggling = false;

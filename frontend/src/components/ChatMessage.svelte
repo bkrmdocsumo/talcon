@@ -1,5 +1,6 @@
 <script>
   import { renderMarkdown } from '../lib/markdown.js';
+  import { formatToolLabel } from '../lib/utils/formatters.js';
   import TypingIndicator from './TypingIndicator.svelte';
   import appIcon from '../assets/appicon.png';
 
@@ -33,8 +34,34 @@
     return parts.length > 1 ? parts.pop().toUpperCase() : 'FILE';
   }
 
-  function formatToolName(name) {
-    return (name || '').replace(/_/g, ' ');
+  // ─── Copy helpers ───
+  let messageCopied = false;
+
+  function handleContentClick(e) {
+    // Event delegation for code block copy buttons.
+    const btn = e.target.closest('.code-copy-btn');
+    if (!btn) return;
+    e.preventDefault();
+    const code = btn.getAttribute('data-code')
+      ?.replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"');
+    if (code) {
+      navigator.clipboard.writeText(code);
+      const label = btn.querySelector('.code-copy-label');
+      if (label) {
+        label.textContent = 'Copied!';
+        setTimeout(() => { label.textContent = 'Copy'; }, 1500);
+      }
+    }
+  }
+
+  function copyMessage() {
+    if (!message?.content) return;
+    navigator.clipboard.writeText(message.content);
+    messageCopied = true;
+    setTimeout(() => { messageCopied = false; }, 1500);
   }
 
   $: steps = (!isTyping && message?.steps) ? message.steps : [];
@@ -64,7 +91,9 @@
         {message.role === 'user' ? 'You' : agentName}
       {/if}
     </div>
-    <div class="message-content">
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="message-content" on:click={handleContentClick}>
       {#if isTyping}
         <TypingIndicator />
       {:else if message.role === 'assistant'}
@@ -75,15 +104,9 @@
             <div class="steps-container">
               {#each steps as step, i}
                 {#if step.type === 'thinking'}
-                  <button class="step-toggle step-thinking" on:click={() => toggleStep(i)}>
-                    <span class="step-icon">{expandedSteps[i] ? '▼' : '▶'}</span>
-                    <span class="step-label">Thinking</span>
-                  </button>
-                  {#if expandedSteps[i]}
-                    <div class="step-content step-thinking-content">
-                      {step.content}
-                    </div>
-                  {/if}
+                  <div class="step-thinking-inline">
+                    {step.content}
+                  </div>
                 {:else if step.type === 'tool_call'}
                   <button class="step-toggle step-tool" on:click={() => toggleStep(i)}>
                     <span class="step-icon">{expandedSteps[i] ? '▼' : '▶'}</span>
@@ -92,7 +115,7 @@
                         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
                       </svg>
                     </span>
-                    <span class="step-label">{formatToolName(step.tool_name)}</span>
+                    <span class="step-label">{formatToolLabel(step.tool_name, step.tool_input)}</span>
                   </button>
                   {#if expandedSteps[i]}
                     <div class="step-content step-tool-content">
@@ -116,6 +139,26 @@
           {/if}
           {#if message.isStreaming && message.content}
             <span class="streaming-cursor"></span>
+          {/if}
+
+          <!-- Copy full message button -->
+          {#if message.content && !message.isStreaming}
+            <div class="message-actions">
+              <button class="msg-copy-btn" on:click={copyMessage} title="Copy message">
+                {#if messageCopied}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 6L9 17l-5-5"/>
+                  </svg>
+                  <span>Copied!</span>
+                {:else}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                  <span>Copy</span>
+                {/if}
+              </button>
+            </div>
           {/if}
         {/if}
       {:else}
@@ -249,6 +292,62 @@
 
   .message-content :global(p:last-child) {
     margin-bottom: 0;
+  }
+
+  /* ─── Code Block Wrapper ─── */
+  .message-content :global(.code-block-wrapper) {
+    margin: 10px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .message-content :global(.code-block-header) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .message-content :global(.code-block-lang) {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: lowercase;
+    font-family: var(--font-mono);
+  }
+
+  .message-content :global(.code-copy-btn) {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+  }
+
+  .message-content :global(.code-copy-btn:hover) {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .message-content :global(.code-block-wrapper pre) {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 13px;
+    background: none;
+    border: none;
+    border-radius: 0;
   }
 
   .message-content :global(pre) {
@@ -393,8 +492,14 @@
     font-weight: 500;
   }
 
-  .step-thinking .step-label {
-    color: #c084fc;
+  .step-thinking-inline {
+    padding: 8px 12px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   }
 
   .step-tool .step-label {
@@ -406,14 +511,6 @@
     font-size: 12px;
     line-height: 1.5;
     border-top: 1px solid rgba(255, 255, 255, 0.04);
-  }
-
-  .step-thinking-content {
-    color: var(--text-muted);
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    max-height: 300px;
-    overflow-y: auto;
   }
 
   .step-tool-content pre,
@@ -523,5 +620,34 @@
   .attachment-file-meta {
     font-size: 11px;
     color: var(--text-muted);
+  }
+
+  /* ─── Message Actions (Copy button at bottom of message) ─── */
+  .message-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+    padding-top: 4px;
+  }
+
+  .msg-copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+  }
+
+  .msg-copy-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.06);
   }
 </style>

@@ -27,7 +27,7 @@ type Config struct {
 	// Speech-to-text configuration.
 	SpeechProvider string `json:"speech_provider"` // "whisper" (default) or "deepgram"
 	SpeechModel    string `json:"speech_model"`    // OpenAI model: "gpt-4o-mini-transcribe" (default), "gpt-4o-transcribe", "whisper-1"
-	OpenAIKey      string `json:"openai_key"`      // OpenAI API key (for Whisper / GPT-4o transcribe)
+	OpenAIKey      string `json:"openai_key"`      // OpenAI API key (for GPT chat models + Whisper/GPT-4o transcribe)
 	DeepgramKey    string `json:"deepgram_key"`    // Deepgram API key
 
 	// Global push-to-talk dictation — hold a modifier key to record, release to transcribe & paste.
@@ -73,7 +73,7 @@ func Bootstrap() (string, error) {
 			Agents: map[string]AgentConfig{
 			"main": {
 				Name:           "Talon",
-				Model:          "claude-sonnet-4-20250514",
+				Model:          "claude-sonnet-4-5-20250929",
 				SoulPath:       "workspace/SOUL.md",
 				SessionPrefix:  "agent_main",
 				EnableThinking: true,

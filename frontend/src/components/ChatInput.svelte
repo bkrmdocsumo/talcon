@@ -5,8 +5,6 @@
 
   export let disabled = false;
   export let loading = false;
-  export let agentName = 'Talon';
-
   let input = '';
   let textareaEl;
   let fileInputEl;
@@ -43,9 +41,12 @@
   let selectedModel = 'Sonnet 4.5';
   let showModelMenu = false;
   const models = [
-    { id: 'claude-sonnet-4-5-20250514', label: 'Sonnet 4.5' },
-    { id: 'claude-opus-4-5-20250514', label: 'Opus 4.5' },
-    { id: 'claude-haiku-4-5-20250514', label: 'Haiku 4.5' },
+    { id: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5' },
+    { id: 'claude-opus-4-6', label: 'Opus 4.6' },
+    { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
+    { id: 'gpt-4o', label: 'GPT-4o' },
+    { id: 'gpt-5.2', label: 'GPT-5.2' },
+    { id: 'gpt-5-mini', label: 'GPT-5 Mini' },
   ];
 
   const dispatch = createEventDispatcher();
@@ -274,6 +275,8 @@
     on:dragover={handleDragOver}
     on:dragleave={handleDragLeave}
     on:drop={handleDrop}
+    role="group"
+    aria-label="Message input"
   >
     {#if files.length > 0}
       <div class="file-preview-row">
@@ -367,7 +370,7 @@
           </button>
 
           {#if showModelMenu}
-            <div class="model-menu" on:click|stopPropagation>
+            <div class="model-menu" on:click|stopPropagation on:keydown|stopPropagation role="menu">
               {#each models as model}
                 <button
                   class="model-option"

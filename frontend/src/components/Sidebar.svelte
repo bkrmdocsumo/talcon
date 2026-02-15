@@ -164,17 +164,16 @@
                   title={chat.title}
                 >
                   <span class="history-title">{chat.title}</span>
-                  {#if hoveredChatId === chat.id}
-                    <button
-                      class="delete-btn"
-                      on:click={(e) => handleDeleteChat(e, chat.id)}
-                      title="Delete chat"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-                      </svg>
-                    </button>
-                  {/if}
+                  <button
+                    class="delete-btn"
+                    class:visible={hoveredChatId === chat.id}
+                    on:click={(e) => handleDeleteChat(e, chat.id)}
+                    title="Delete chat"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                      <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                    </svg>
+                  </button>
                 </button>
               {/each}
             </div>
@@ -225,17 +224,16 @@
                   title={task.title}
                 >
                   <span class="history-title">{task.title}</span>
-                  {#if hoveredAgentTaskId === task.id}
-                    <button
-                      class="delete-btn"
-                      on:click={(e) => handleDeleteAgentTask(e, task.id)}
-                      title="Delete task"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-                      </svg>
-                    </button>
-                  {/if}
+                  <button
+                    class="delete-btn"
+                    class:visible={hoveredAgentTaskId === task.id}
+                    on:click={(e) => handleDeleteAgentTask(e, task.id)}
+                    title="Delete task"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                      <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                    </svg>
+                  </button>
                 </button>
               {/each}
             </div>
@@ -292,17 +290,16 @@
                       {flow.wordCount} words · {formatDuration(flow.duration)}
                     </span>
                   </div>
-                  {#if hoveredFlowId === flow.id}
-                    <button
-                      class="delete-btn"
-                      on:click={(e) => handleDeleteFlow(e, flow.id)}
-                      title="Delete recording"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-                      </svg>
-                    </button>
-                  {/if}
+                  <button
+                    class="delete-btn"
+                    class:visible={hoveredFlowId === flow.id}
+                    on:click={(e) => handleDeleteFlow(e, flow.id)}
+                    title="Delete recording"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                      <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                    </svg>
+                  </button>
                 </button>
               {/each}
             </div>
@@ -370,25 +367,13 @@
     border-radius: 2px;
   }
 
-  /* ─── Section Header ─── */
-  .section-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    color: var(--text-primary);
-    font-size: 13.5px;
-    font-weight: 500;
-    font-family: var(--font-sans);
-  }
-
   /* ─── Nav Items ─── */
   .nav-item {
     display: flex;
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 10px 12px;
+    padding: 8px 12px;
     background: none;
     border: none;
     border-radius: 8px;
@@ -416,7 +401,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 12px;
+    padding: 4px 12px;
     border-radius: 8px;
     transition: all 0.15s ease;
   }
@@ -448,7 +433,7 @@
   .nav-divider {
     height: 1px;
     background: var(--border);
-    margin: 8px 12px;
+    margin: 4px 12px;
   }
 
   /* ─── Chat / Flow History ─── */
@@ -456,7 +441,7 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
     min-height: 0;
     overflow-y: auto;
   }
@@ -482,11 +467,11 @@
   }
 
   .history-group {
-    margin-bottom: 4px;
+    margin-bottom: 2px;
   }
 
   .history-group-label {
-    padding: 8px 12px 4px;
+    padding: 6px 12px 2px;
     font-size: 11px;
     font-weight: 600;
     color: var(--text-muted);
@@ -498,10 +483,10 @@
     display: flex;
     align-items: center;
     width: 100%;
-    padding: 8px 12px;
+    padding: 6px 12px;
     background: none;
     border: none;
-    border-radius: 8px;
+    border-radius: 6px;
     color: var(--text-secondary);
     font-size: 13px;
     font-family: var(--font-sans);
@@ -556,8 +541,15 @@
     border-radius: 4px;
     color: var(--text-muted);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
     margin-left: 4px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .delete-btn.visible {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .delete-btn:hover {

@@ -14,10 +14,26 @@ import (
 	"github.com/user/talon/internal/llm"
 	"github.com/user/talon/internal/session"
 	"github.com/user/talon/internal/tools"
+	"github.com/user/talon/internal/util"
 )
 
 // maxToolIterations prevents infinite loops in the agent turn.
 const maxToolIterations = 25
+
+// agentCodeFileSuffix is appended to the system prompt for agent tasks to
+// ensure generated code is always saved as files in the workspace directory.
+const agentCodeFileSuffix = `
+
+## Code Output Rules (IMPORTANT — Agent Tasks)
+
+When working on an agent task, you MUST always save any code you produce as files using the write_file tool. NEVER just display code in your response without also writing it to a file.
+
+- **Every code snippet** (scripts, configs, HTML, CSS, JSON, YAML, etc.) MUST be saved as a file with an appropriate name and extension.
+- If the user asks you to write a program, build something, or generate any code, create the file(s) first using write_file, then explain what you created.
+- Use clear, descriptive filenames (e.g. "app.py", "index.html", "schema.sql", "Dockerfile").
+- For multi-file projects, organise files in a logical directory structure.
+- After writing files, you may still show key parts of the code in your response for explanation, but the file MUST exist.
+`
 
 // todoPromptSuffix is appended to the system prompt to instruct the agent
 // to use the todo_write tool for task planning. This is injected
@@ -52,7 +68,7 @@ type TurnResult struct {
 // Deps bundles the dependencies required to run an agent turn.
 type Deps struct {
 	SessionMgr   *session.Manager
-	LLMClient    *llm.Client
+	LLMClient    llm.LLMClient
 	ToolRegistry *tools.Registry
 	BaseDir      string // ~/.talon path
 }
@@ -149,6 +165,9 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 				ToolInput: string(tb.Input),
 			})
 
+			// Tool errors are returned as strings (not Go errors) so they
+			// can be fed back to the LLM as tool_result content. This lets
+			// the model see and reason about tool failures.
 			toolResult, err := deps.ToolRegistry.Execute(ctx, tb.Name, tb.Input)
 			if err != nil {
 				toolResult = fmt.Sprintf("Tool execution error: %v", err)
@@ -159,7 +178,7 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 			// Record the tool result step.
 			result.Steps = append(result.Steps, Step{
 				Type:     "tool_result",
-				Content:  truncateForUI(toolResult, 2000),
+				Content:  util.TruncateForUI(toolResult, 2000),
 				ToolName: tb.Name,
 			})
 
@@ -171,7 +190,10 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 					"content":     toolResult,
 				},
 			}
-			resultRaw, _ := json.Marshal(toolResultContent)
+			resultRaw, err := json.Marshal(toolResultContent)
+			if err != nil {
+				return nil, fmt.Errorf("marshal tool result: %w", err)
+			}
 
 			toolResultMsg := session.Message{
 				Role:    "user",
@@ -210,6 +232,7 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 	// write to the workspace. If already set by caller (e.g. agent tasks
 	// use ~/.talon/agents/), honour that; otherwise default to sessions/.
 	sessionWorkDir := tools.SessionDirFromContext(ctx)
+	isAgentTask := sessionWorkDir != "" // caller pre-set a workspace → agent task
 	if sessionWorkDir == "" {
 		sessionWorkDir = filepath.Join(deps.BaseDir, "sessions", sessionID)
 	}
@@ -238,6 +261,11 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 
 	// Inject planning instructions so the agent always uses todo_write.
 	systemPrompt += todoPromptSuffix
+
+	// For agent tasks, inject instructions to always save code as files.
+	if isAgentTask {
+		systemPrompt += agentCodeFileSuffix
+	}
 
 	// Wire up todo_write callback so the tool can push updates to the frontend.
 	ctx = tools.WithTodoCallback(ctx, func(items []tools.TodoItem) {
@@ -327,7 +355,7 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 
 			log.Printf("[tool] %s -> %d bytes result", tb.Name, len(toolResult))
 
-			truncated := truncateForUI(toolResult, 2000)
+			truncated := util.TruncateForUI(toolResult, 2000)
 
 			// Record and emit the tool result step.
 			result.Steps = append(result.Steps, Step{
@@ -385,14 +413,6 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 	}
 
 	return nil, fmt.Errorf("agent exceeded maximum tool iterations (%d)", maxToolIterations)
-}
-
-// truncateForUI truncates long tool results for display in the UI.
-func truncateForUI(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "\n... (truncated)"
 }
 
 // loadSoul reads the system prompt file.

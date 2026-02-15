@@ -1,6 +1,7 @@
 <script>
   import { afterUpdate, createEventDispatcher, tick } from 'svelte';
   import { renderMarkdown } from '../lib/markdown.js';
+  import { formatToolLabel, formatToolName } from '../lib/utils/formatters.js';
   import AgentFileCard from './AgentFileCard.svelte';
   import AgentInfoPanel from './AgentInfoPanel.svelte';
   import TypingIndicator from './TypingIndicator.svelte';
@@ -9,7 +10,6 @@
   export let messages = [];            // Array of { role: 'user'|'assistant', content, steps?, isStreaming? }
   export let isStreaming = false;
   export let loading = false;
-  export let agentName = 'Talon';
   export let disabled = false;
 
   // Data for the info panel
@@ -25,8 +25,13 @@
   let contentContainer;
   let input = '';
   let textareaEl;
+  let skipNextScroll = false;
 
   afterUpdate(() => {
+    if (skipNextScroll) {
+      skipNextScroll = false;
+      return;
+    }
     scrollToBottom();
   });
 
@@ -37,10 +42,6 @@
         behavior: 'smooth',
       });
     }
-  }
-
-  function formatToolName(name) {
-    return (name || '').replace(/_/g, ' ');
   }
 
   // Build summary from all steps across all messages
@@ -64,6 +65,7 @@
     const key = `${msgIdx}-${stepIdx}`;
     expandedSteps[key] = !expandedSteps[key];
     expandedSteps = expandedSteps;
+    skipNextScroll = true;
   }
 
   function handleOpenFile(e) {
@@ -109,6 +111,35 @@
   function handleCancel() {
     dispatch('cancel');
   }
+
+  // ─── Copy helpers ───
+  let copiedMsgIdx = -1;
+
+  function handleContentClick(e) {
+    const btn = e.target.closest('.code-copy-btn');
+    if (!btn) return;
+    e.preventDefault();
+    const code = btn.getAttribute('data-code')
+      ?.replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"');
+    if (code) {
+      navigator.clipboard.writeText(code);
+      const label = btn.querySelector('.code-copy-label');
+      if (label) {
+        label.textContent = 'Copied!';
+        setTimeout(() => { label.textContent = 'Copy'; }, 1500);
+      }
+    }
+  }
+
+  function copyMessage(msgIdx, content) {
+    if (!content) return;
+    navigator.clipboard.writeText(content);
+    copiedMsgIdx = msgIdx;
+    setTimeout(() => { copiedMsgIdx = -1; }, 1500);
+  }
 </script>
 
 <div class="workspace-layout">
@@ -146,15 +177,9 @@
               <div class="steps-container">
                 {#each message.steps as step, i}
                   {#if step.type === 'thinking'}
-                    <button class="step-toggle step-thinking" on:click={() => toggleStep(msgIdx, i)}>
-                      <span class="step-icon">{expandedSteps[`${msgIdx}-${i}`] ? '▼' : '▶'}</span>
-                      <span class="step-label">Thinking</span>
-                    </button>
-                    {#if expandedSteps[`${msgIdx}-${i}`]}
-                      <div class="step-content step-thinking-content">
-                        {step.content}
-                      </div>
-                    {/if}
+                    <div class="step-thinking-inline">
+                      {step.content}
+                    </div>
                   {:else if step.type === 'tool_call'}
                     <button class="step-toggle step-tool" on:click={() => toggleStep(msgIdx, i)}>
                       <span class="step-icon">{expandedSteps[`${msgIdx}-${i}`] ? '▼' : '▶'}</span>
@@ -163,7 +188,7 @@
                           <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
                         </svg>
                       </span>
-                      <span class="step-label">{formatToolName(step.tool_name)}</span>
+                      <span class="step-label">{formatToolLabel(step.tool_name, step.tool_input)}</span>
                     </button>
                     {#if expandedSteps[`${msgIdx}-${i}`]}
                       <div class="step-content step-tool-content">
@@ -185,12 +210,34 @@
 
             <!-- Agent Response Text -->
             {#if message.content}
-              <div class="agent-response">
+              <!-- svelte-ignore a11y-click-events-have-key-events -->
+              <!-- svelte-ignore a11y-no-static-element-interactions -->
+              <div class="agent-response" on:click={handleContentClick}>
                 {@html renderMarkdown(message.content)}
                 {#if message.isStreaming}
                   <span class="streaming-cursor"></span>
                 {/if}
               </div>
+
+              <!-- Copy full message button -->
+              {#if !message.isStreaming}
+                <div class="message-actions">
+                  <button class="msg-copy-btn" on:click={() => copyMessage(msgIdx, message.content)} title="Copy message">
+                    {#if copiedMsgIdx === msgIdx}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 6L9 17l-5-5"/>
+                      </svg>
+                      <span>Copied!</span>
+                    {:else}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                      </svg>
+                      <span>Copy</span>
+                    {/if}
+                  </button>
+                </div>
+              {/if}
             {:else if message.isStreaming}
               <div class="agent-response">
                 <TypingIndicator />
@@ -256,7 +303,6 @@
     {progressSteps}
     files={createdFiles}
     {contextTools}
-    {taskTitle}
     {prompt}
     on:openFile={handleInfoOpenFile}
     on:openFolder={handleOpenFolder}
@@ -401,8 +447,14 @@
     font-weight: 500;
   }
 
-  .step-thinking .step-label {
-    color: #c084fc;
+  .step-thinking-inline {
+    padding: 8px 12px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   }
 
   .step-tool .step-label {
@@ -414,14 +466,6 @@
     font-size: 12px;
     line-height: 1.5;
     border-top: 1px solid rgba(255, 255, 255, 0.04);
-  }
-
-  .step-thinking-content {
-    color: var(--text-muted);
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    max-height: 300px;
-    overflow-y: auto;
   }
 
   .step-tool-content pre,
@@ -458,7 +502,7 @@
     color: var(--text-primary);
     word-wrap: break-word;
     overflow-wrap: break-word;
-    margin-bottom: 16px;
+    margin-bottom: 4px;
   }
 
   .agent-response :global(p) {
@@ -467,6 +511,62 @@
 
   .agent-response :global(p:last-child) {
     margin-bottom: 0;
+  }
+
+  /* ─── Code Block Wrapper ─── */
+  .agent-response :global(.code-block-wrapper) {
+    margin: 10px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .agent-response :global(.code-block-header) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .agent-response :global(.code-block-lang) {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: lowercase;
+    font-family: var(--font-mono);
+  }
+
+  .agent-response :global(.code-copy-btn) {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+  }
+
+  .agent-response :global(.code-copy-btn:hover) {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .agent-response :global(.code-block-wrapper pre) {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 13px;
+    background: none;
+    border: none;
+    border-radius: 0;
   }
 
   .agent-response :global(pre) {
@@ -496,6 +596,34 @@
     background: none;
     padding: 0;
     border: none;
+  }
+
+  /* ─── Message Actions ─── */
+  .message-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+
+  .msg-copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+  }
+
+  .msg-copy-btn:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.06);
   }
 
   .agent-response :global(ul),

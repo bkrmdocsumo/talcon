@@ -13,104 +13,112 @@ extern void goRecordingError(const char *error);
 // ═══════════════════════════════════════════════════════════════════════
 
 static AVAudioEngine *audioEngine = nil;
-static SFSpeechAudioBufferRecognitionRequest *recognitionRequest = nil;
-static SFSpeechRecognitionTask *recognitionTask = nil;
+static id recognitionRequest = nil;  // SFSpeechAudioBufferRecognitionRequest (10.15+)
+static id recognitionTask = nil;     // SFSpeechRecognitionTask (10.15+)
 
 void StartSpeechRecognition(const char *locale) {
-    // Stop any previous session first.
-    if (audioEngine && audioEngine.isRunning) {
-        [audioEngine stop];
-        [audioEngine.inputNode removeTapOnBus:0];
-    }
-    if (recognitionRequest) {
-        [recognitionRequest endAudio];
-        recognitionRequest = nil;
-    }
-    if (recognitionTask) {
-        [recognitionTask cancel];
-        recognitionTask = nil;
-    }
-
-    [SFSpeechRecognizer requestAuthorization:^(SFSpeechRecognizerAuthorizationStatus status) {
-        if (status != SFSpeechRecognizerAuthorizationStatusAuthorized) {
-            const char *msg;
-            switch (status) {
-                case SFSpeechRecognizerAuthorizationStatusDenied:
-                    msg = "Speech recognition permission denied. Enable it in System Settings > Privacy & Security > Speech Recognition.";
-                    break;
-                case SFSpeechRecognizerAuthorizationStatusRestricted:
-                    msg = "Speech recognition is restricted on this device.";
-                    break;
-                default:
-                    msg = "Speech recognition authorization failed.";
-                    break;
-            }
-            goSpeechError(msg);
-            return;
-        }
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            NSString *localeStr = [NSString stringWithUTF8String:locale];
-            SFSpeechRecognizer *recognizer = [[SFSpeechRecognizer alloc]
-                initWithLocale:[NSLocale localeWithLocaleIdentifier:localeStr]];
-
-            if (!recognizer || !recognizer.isAvailable) {
-                goSpeechError("Speech recognizer is not available for this language.");
-                return;
-            }
-
-            audioEngine = [[AVAudioEngine alloc] init];
-            recognitionRequest = [[SFSpeechAudioBufferRecognitionRequest alloc] init];
-            recognitionRequest.shouldReportPartialResults = YES;
-
-            recognitionTask = [recognizer recognitionTaskWithRequest:recognitionRequest
-                resultHandler:^(SFSpeechRecognitionResult *result, NSError *error) {
-                    if (result) {
-                        NSString *text = result.bestTranscription.formattedString;
-                        goSpeechResult([text UTF8String], result.isFinal ? 1 : 0);
-                    }
-                    if (error) {
-                        // Ignore cancellation errors (code 216 = cancelled, code 1 = generic cancel).
-                        if (error.code != 216 && error.code != 1) {
-                            goSpeechError([[error localizedDescription] UTF8String]);
-                        }
-                    }
-                }];
-
-            AVAudioInputNode *inputNode = audioEngine.inputNode;
-            AVAudioFormat *format = [inputNode outputFormatForBus:0];
-            [inputNode installTapOnBus:0 bufferSize:1024 format:format
-                block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
-                    [recognitionRequest appendAudioPCMBuffer:buffer];
-                }];
-
-            [audioEngine prepare];
-            NSError *engineError = nil;
-            if (![audioEngine startAndReturnError:&engineError]) {
-                NSString *msg = [NSString stringWithFormat:@"Audio engine failed: %@",
-                    [engineError localizedDescription]];
-                goSpeechError([msg UTF8String]);
-                return;
-            }
-        });
-    }];
-}
-
-void StopSpeechRecognition(void) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (recognitionRequest) {
-            [recognitionRequest endAudio];
-            recognitionRequest = nil;
-        }
+    if (@available(macOS 10.15, *)) {
+        // Stop any previous session first.
         if (audioEngine && audioEngine.isRunning) {
             [audioEngine stop];
             [audioEngine.inputNode removeTapOnBus:0];
         }
+        if (recognitionRequest) {
+            [(SFSpeechAudioBufferRecognitionRequest *)recognitionRequest endAudio];
+            recognitionRequest = nil;
+        }
         if (recognitionTask) {
-            [recognitionTask cancel];
+            [(SFSpeechRecognitionTask *)recognitionTask cancel];
             recognitionTask = nil;
         }
-    });
+
+        [SFSpeechRecognizer requestAuthorization:^(SFSpeechRecognizerAuthorizationStatus status) {
+            if (status != SFSpeechRecognizerAuthorizationStatusAuthorized) {
+                const char *msg;
+                switch (status) {
+                    case SFSpeechRecognizerAuthorizationStatusDenied:
+                        msg = "Speech recognition permission denied. Enable it in System Settings > Privacy & Security > Speech Recognition.";
+                        break;
+                    case SFSpeechRecognizerAuthorizationStatusRestricted:
+                        msg = "Speech recognition is restricted on this device.";
+                        break;
+                    default:
+                        msg = "Speech recognition authorization failed.";
+                        break;
+                }
+                goSpeechError(msg);
+                return;
+            }
+
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSString *localeStr = [NSString stringWithUTF8String:locale];
+                SFSpeechRecognizer *recognizer = [[SFSpeechRecognizer alloc]
+                    initWithLocale:[NSLocale localeWithLocaleIdentifier:localeStr]];
+
+                if (!recognizer || !recognizer.isAvailable) {
+                    goSpeechError("Speech recognizer is not available for this language.");
+                    return;
+                }
+
+                audioEngine = [[AVAudioEngine alloc] init];
+                SFSpeechAudioBufferRecognitionRequest *req =
+                    [[SFSpeechAudioBufferRecognitionRequest alloc] init];
+                req.shouldReportPartialResults = YES;
+                recognitionRequest = req;
+
+                recognitionTask = [recognizer recognitionTaskWithRequest:req
+                    resultHandler:^(SFSpeechRecognitionResult *result, NSError *error) {
+                        if (result) {
+                            NSString *text = result.bestTranscription.formattedString;
+                            goSpeechResult([text UTF8String], result.isFinal ? 1 : 0);
+                        }
+                        if (error) {
+                            // Ignore cancellation errors (code 216 = cancelled, code 1 = generic cancel).
+                            if (error.code != 216 && error.code != 1) {
+                                goSpeechError([[error localizedDescription] UTF8String]);
+                            }
+                        }
+                    }];
+
+                AVAudioInputNode *inputNode = audioEngine.inputNode;
+                AVAudioFormat *format = [inputNode outputFormatForBus:0];
+                [inputNode installTapOnBus:0 bufferSize:1024 format:format
+                    block:^(AVAudioPCMBuffer *buffer, AVAudioTime *when) {
+                        [req appendAudioPCMBuffer:buffer];
+                    }];
+
+                [audioEngine prepare];
+                NSError *engineError = nil;
+                if (![audioEngine startAndReturnError:&engineError]) {
+                    NSString *msg = [NSString stringWithFormat:@"Audio engine failed: %@",
+                        [engineError localizedDescription]];
+                    goSpeechError([msg UTF8String]);
+                    return;
+                }
+            });
+        }];
+    } else {
+        goSpeechError("Speech recognition requires macOS 10.15 (Catalina) or later.");
+    }
+}
+
+void StopSpeechRecognition(void) {
+    if (@available(macOS 10.15, *)) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (recognitionRequest) {
+                [(SFSpeechAudioBufferRecognitionRequest *)recognitionRequest endAudio];
+                recognitionRequest = nil;
+            }
+            if (audioEngine && audioEngine.isRunning) {
+                [audioEngine stop];
+                [audioEngine.inputNode removeTapOnBus:0];
+            }
+            if (recognitionTask) {
+                [(SFSpeechRecognitionTask *)recognitionTask cancel];
+                recognitionTask = nil;
+            }
+        });
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════

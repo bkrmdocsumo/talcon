@@ -125,6 +125,11 @@ func NewClient(apiKey, model string) *Client {
 	}
 }
 
+// GetModel returns the model identifier.
+func (c *Client) GetModel() string {
+	return c.Model
+}
+
 // apiRequest is the request body for the Messages API.
 type apiRequest struct {
 	Model     string            `json:"model"`

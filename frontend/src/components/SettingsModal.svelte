@@ -92,8 +92,8 @@
   }
 </script>
 
-<div class="modal-overlay" on:click={close} on:keydown={handleKeydown}>
-  <div class="modal" on:click|stopPropagation role="dialog" aria-modal="true" aria-label="Settings">
+<div class="modal-overlay" on:click|self={close} on:keydown={handleKeydown} role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Settings">
     <div class="modal-header">
       <h2>Settings</h2>
       <button class="btn-close" on:click={close} title="Close">
@@ -161,6 +161,18 @@
           />
           <p class="field-hint">Used for the Telegram bot (@talonclaw_bot). Saved in ~/.talon/config.json</p>
 
+          <label class="field-label" for="settings-openai-key-general">OpenAI API Key</label>
+          <input
+            id="settings-openai-key-general"
+            type="password"
+            class="field-input"
+            bind:value={settingsOpenAIKey}
+            placeholder="sk-..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <p class="field-hint">Used for GPT chat models and speech-to-text. Get one at platform.openai.com</p>
+
           <div class="tg-status-section">
             <div class="tg-status-row">
               <span class="tg-status-label">Telegram Bot</span>
@@ -208,17 +220,7 @@
             </select>
             <p class="field-hint">gpt-4o-mini-transcribe is fast and accurate. gpt-4o-transcribe is highest quality but slower.</p>
 
-            <label class="field-label" for="settings-openai-key">OpenAI API Key</label>
-            <input
-              id="settings-openai-key"
-              type="password"
-              class="field-input"
-              bind:value={settingsOpenAIKey}
-              placeholder="sk-..."
-              autocomplete="off"
-              spellcheck="false"
-            />
-            <p class="field-hint">Used for OpenAI speech-to-text. Get one at platform.openai.com</p>
+            <p class="field-hint" style="margin-top: 12px;">OpenAI API Key is configured in the <button class="link-btn" type="button" on:click={() => activeTab = 'general'}>General</button> tab.</p>
           {:else}
             <label class="field-label" for="settings-deepgram-key">Deepgram API Key</label>
             <input
@@ -529,12 +531,6 @@
     cursor: not-allowed;
   }
 
-  /* ─── Voice / Speech Section ─── */
-  .speech-section {
-    margin-top: 20px;
-    padding-top: 16px;
-  }
-
   .section-title {
     font-size: 14px;
     font-weight: 600;
@@ -699,6 +695,22 @@
 
   .accessibility-dot-active {
     background: #4ade80;
+  }
+
+  .link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent);
+    font-size: inherit;
+    font-family: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .link-btn:hover {
+    color: var(--accent-hover);
   }
 
   .btn-action-sm {

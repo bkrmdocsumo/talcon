@@ -1,29 +1,24 @@
 <script>
   import appIcon from '../assets/appicon.png';
 
-  export let agentName = 'Talon';
+  export let userName = '';
 
-  // Get time-based greeting
-  function getGreeting() {
+  // Agent-specific greeting — more task-oriented than the chat greeting.
+  function getAgentGreeting() {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
+    if (hour < 12) return 'Ready to build';
+    if (hour < 17) return "Let's get things done";
+    return 'Evening mode, activated';
   }
 
-  // Get user name from system (or fallback)
-  function getUserName() {
-    return 'Bikram'; // TODO: get from backend user config
-  }
-
-  $: greeting = getGreeting();
-  $: userName = getUserName();
+  $: greeting = getAgentGreeting();
+  $: displayGreeting = userName ? `${greeting}, ${userName}` : greeting;
 </script>
 
 <div class="welcome">
   <h1 class="welcome-heading">
     <img class="welcome-icon" src={appIcon} alt="Talon" />
-    <span>{greeting}, {userName}</span>
+    <span>{displayGreeting}</span>
   </h1>
 </div>
 

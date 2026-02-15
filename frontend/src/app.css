@@ -19,8 +19,8 @@
   --accent-hover: #0cc8b5;
   --accent-glow: rgba(14, 240, 216, 0.2);
 
-  --user-accent: #d97757; /* Claude-like terra cotta orange */
-  --user-accent-glow: rgba(217, 119, 87, 0.25);
+  --user-accent: #0bbfac; /* Muted teal — complements the primary accent */
+  --user-accent-glow: rgba(11, 191, 172, 0.25);
 
   --danger: #ef4444;
 

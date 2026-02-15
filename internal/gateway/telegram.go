@@ -8,13 +8,13 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/user/talon/internal/agent"
 	"github.com/user/talon/internal/config"
 	"github.com/user/talon/internal/router"
+	"github.com/user/talon/internal/util"
 )
 
 // RunTelegram starts the Telegram bot long-poller. It blocks until ctx is cancelled.
@@ -100,7 +100,7 @@ func RunTelegram(ctx context.Context, cfg *config.Config, deps agent.Deps) {
 					text = update.Message.Caption
 				}
 
-				log.Printf("[telegram] message from %d: %s", userID, truncate(text, 80))
+				log.Printf("[telegram] message from %d: %s", userID, util.Truncate(text, 80))
 
 				// Route to the correct agent.
 				agentCfg := router.Route(text, cfg)
@@ -187,7 +187,7 @@ func buildTelegramContent(bot *tgbotapi.BotAPI, msg *tgbotapi.Message, text stri
 	// Build multimodal content blocks.
 	var blocks []map[string]interface{}
 
-	if isImageMime(mimeType) {
+	if util.IsImageMime(mimeType) {
 		blocks = append(blocks, map[string]interface{}{
 			"type": "image",
 			"source": map[string]interface{}{
@@ -246,18 +246,3 @@ func downloadTelegramFile(bot *tgbotapi.BotAPI, fileID string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-// isImageMime returns true for image MIME types supported by the Anthropic API.
-func isImageMime(mime string) bool {
-	switch strings.ToLower(mime) {
-	case "image/png", "image/jpeg", "image/gif", "image/webp":
-		return true
-	}
-	return false
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
-}

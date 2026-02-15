@@ -211,7 +211,11 @@ static void ensureOverlay(void) {
     recContainer.layer.masksToBounds = YES;
 
     NSVisualEffectView *recBlur = [[NSVisualEffectView alloc] initWithFrame:recContainer.bounds];
-    recBlur.material          = NSVisualEffectMaterialHUDWindow;
+    if (@available(macOS 10.14, *)) {
+        recBlur.material      = NSVisualEffectMaterialHUDWindow;
+    } else {
+        recBlur.material      = NSVisualEffectMaterialDark;
+    }
     recBlur.state             = NSVisualEffectStateActive;
     recBlur.blendingMode      = NSVisualEffectBlendingModeBehindWindow;
     recBlur.appearance        = [NSAppearance appearanceNamed:NSAppearanceNameVibrantDark];
@@ -229,7 +233,11 @@ static void ensureOverlay(void) {
     thinkContainer.layer.masksToBounds = YES;
 
     NSVisualEffectView *thinkBlur = [[NSVisualEffectView alloc] initWithFrame:thinkContainer.bounds];
-    thinkBlur.material          = NSVisualEffectMaterialHUDWindow;
+    if (@available(macOS 10.14, *)) {
+        thinkBlur.material      = NSVisualEffectMaterialHUDWindow;
+    } else {
+        thinkBlur.material      = NSVisualEffectMaterialDark;
+    }
     thinkBlur.state             = NSVisualEffectStateActive;
     thinkBlur.blendingMode      = NSVisualEffectBlendingModeBehindWindow;
     thinkBlur.appearance        = [NSAppearance appearanceNamed:NSAppearanceNameVibrantDark];

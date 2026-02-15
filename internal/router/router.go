@@ -32,7 +32,7 @@ func Route(message string, cfg *config.Config) config.AgentConfig {
 	// Absolute fallback with sensible defaults.
 	return config.AgentConfig{
 		Name:          "Talon",
-		Model:         "claude-sonnet-4-20250514",
+		Model:         "claude-sonnet-4-5-20250929",
 		SoulPath:      "workspace/SOUL.md",
 		SessionPrefix: "agent_main",
 	}
