@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +11,8 @@ import (
 	"time"
 
 	"github.com/user/talon/internal/config"
+	"github.com/user/talon/internal/llm"
+	"github.com/user/talon/internal/session"
 	"github.com/user/talon/internal/speech"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -66,6 +70,10 @@ func (a *App) startDictation(cfg *config.Config) {
 				"error": errMsg,
 			})
 		},
+		// Text transformer: apply snippet expansions before typing.
+		a.ApplySnippets,
+		// Grammar fixer: double-tap modifier to fix grammar of selected text via LLM.
+		a.fixGrammar,
 	)
 }
 
@@ -101,8 +109,10 @@ func (a *App) TranscribeAudio(audioBase64 string, mimeType string) (string, erro
 		return "", err
 	}
 
-	log.Printf("[voice] transcription complete: %d chars", len(result.Text))
-	return result.Text, nil
+	// Apply snippet expansions to the transcribed text.
+	finalText := a.ApplySnippets(result.Text)
+	log.Printf("[voice] transcription complete: %d chars", len(finalText))
+	return finalText, nil
 }
 
 // StartVoiceRecording begins capturing audio from the native macOS microphone.
@@ -169,11 +179,64 @@ func (a *App) StopVoiceAndTranscribe() (string, error) {
 		return "", err
 	}
 
-	log.Printf("[voice] transcription complete: %d chars", len(result.Text))
-	return result.Text, nil
+	// Apply snippet expansions to the transcribed text.
+	finalText := a.ApplySnippets(result.Text)
+	log.Printf("[voice] transcription complete: %d chars", len(finalText))
+	return finalText, nil
 }
 
 // IsVoiceRecording returns whether a native voice recording is currently active.
 func (a *App) IsVoiceRecording() bool {
 	return speech.IsRecording()
+}
+
+// fixGrammar sends text to an LLM to fix grammar, spelling, and punctuation.
+// Used as the GrammarFixer callback for the double-tap hotkey feature.
+func (a *App) fixGrammar(text string) (string, error) {
+	// Use the OpenAI key from speech config (same key used for Whisper transcription).
+	speechCfg, err := a.loadSpeechConfig()
+	if err != nil {
+		return text, fmt.Errorf("load speech config: %w", err)
+	}
+
+	apiKey := speechCfg.APIKey
+	if apiKey == "" {
+		// Fall back to environment variable.
+		apiKey = os.Getenv("OPENAI_API_KEY")
+	}
+	if apiKey == "" {
+		return text, fmt.Errorf("OpenAI API key not configured — add it in Settings")
+	}
+
+	log.Printf("[grammar] fixing grammar for %d chars via gpt-4o-mini...", len(text))
+
+	client := llm.NewOpenAIClient(apiKey, "gpt-4o-mini")
+
+	systemPrompt := "Fix the grammar, spelling, and punctuation of the following text. " +
+		"Return ONLY the corrected text without any explanations, quotation marks, or extra formatting. " +
+		"Preserve the original meaning and tone. Do not add or remove content."
+
+	contentJSON, _ := json.Marshal(text)
+	msg := session.Message{
+		Role:    "user",
+		Content: json.RawMessage(contentJSON),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := client.SendMessages(ctx, systemPrompt, []session.Message{msg}, nil, false)
+	if err != nil {
+		return text, fmt.Errorf("LLM call failed: %w", err)
+	}
+
+	// Extract the text from the response content blocks.
+	for _, block := range resp.Content {
+		if block.Type == "text" && block.Text != "" {
+			log.Printf("[grammar] fix complete: %d → %d chars", len(text), len(block.Text))
+			return block.Text, nil
+		}
+	}
+
+	return text, fmt.Errorf("LLM returned no text content")
 }

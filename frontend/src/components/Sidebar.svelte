@@ -11,6 +11,8 @@
   export let telegramChats = []; // Array of { id, title, timestamp }
   export let activeTelegramChatId = null;
   export let telegramStatus = 'stopped';
+  export let snippets = []; // Array of { id, trigger, expansion }
+  export let managingSnippets = false;
 
   const dispatch = createEventDispatcher();
 
@@ -69,6 +71,11 @@
   function handleDeleteTelegramChat(e, chatId) {
     e.stopPropagation();
     dispatch('deleteTelegramChat', { id: chatId });
+  }
+
+  // ─── Snippet handlers ───
+  function handleManageSnippets() {
+    dispatch('manageSnippets');
   }
 
   // ─── Agent task handlers ───
@@ -325,6 +332,19 @@
         <span>New recording</span>
       </button>
 
+      <button class="nav-item" class:nav-active={managingSnippets} on:click={handleManageSnippets}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+        <span>Snippets</span>
+        {#if snippets.length > 0}
+          <span class="snippet-badge">{snippets.length}</span>
+        {/if}
+      </button>
+
       <div class="search-wrapper">
         <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
           <circle cx="11" cy="11" r="8" />
@@ -380,6 +400,7 @@
           {/each}
         {/if}
       </div>
+
     {/if}
   </div>
 
@@ -468,6 +489,21 @@
     color: var(--text-primary);
     font-weight: 500;
     margin-bottom: 2px;
+  }
+
+  .nav-active {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+  }
+
+  .snippet-badge {
+    font-size: 10px;
+    background: rgba(14, 240, 216, 0.12);
+    color: var(--accent);
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-weight: 600;
+    margin-left: auto;
   }
 
   /* ─── Search ─── */

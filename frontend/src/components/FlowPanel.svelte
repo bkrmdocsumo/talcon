@@ -249,6 +249,9 @@
           <span class="hotkey-banner-desc">
             Hold <kbd class="hotkey-kbd">{modifierDisplayName(hotkeyModifier)}</kbd> and speak — text will be typed into whatever app you're using.
           </span>
+          <span class="hotkey-banner-desc">
+            Double-tap <kbd class="hotkey-kbd">{modifierDisplayName(hotkeyModifier)}</kbd> to fix grammar of selected text.
+          </span>
         </div>
         <button class="hotkey-banner-dismiss" on:click={() => hotkeyBannerDismissed = true} title="Dismiss">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">

@@ -8,7 +8,7 @@
     messages, loading, agentName, userName, ready, initError,
     activeTab, chatHistory, activeChatId, isFirstMessage,
     telegramStatus, telegramToggling, showSettings,
-    chatCreatedFiles,
+    chatCreatedFiles, configuredProviders,
     telegramChats, activeTelegramChatId, telegramMessages, viewingTelegram,
     applyStatus, checkBackendStatus, refreshChatHistory,
     sendMessage, cancelStream, newSession, selectChat, deleteChat,
@@ -31,6 +31,12 @@
     saveFlow, clearFlowView,
   } from './lib/stores/flowStore.js';
 
+  import {
+    snippets, managingSnippets,
+    refreshSnippets,
+    showSnippetsPanel, hideSnippetsPanel,
+  } from './lib/stores/snippetsStore.js';
+
   // ─── Components ───
   import Sidebar from './components/Sidebar.svelte';
   import Header from './components/Header.svelte';
@@ -40,6 +46,7 @@
   import ChatInput from './components/ChatInput.svelte';
   import SettingsModal from './components/SettingsModal.svelte';
   import FlowPanel from './components/FlowPanel.svelte';
+  import SnippetsPanel from './components/SnippetsPanel.svelte';
   import AgentWelcome from './components/AgentWelcome.svelte';
   import AgentWorkspace from './components/AgentWorkspace.svelte';
   import AgentFileCard from './components/AgentFileCard.svelte';
@@ -60,6 +67,7 @@
     await refreshFlowHistory();
     await refreshAgentTaskHistory();
     await refreshTelegramChats();
+    await refreshSnippets();
     chatInputRef?.focus();
 
     // Listen for hotkey dictation auto-saves so we can refresh the flow sidebar.
@@ -157,6 +165,10 @@
 
   function handleTabChange(e) {
     activeTab.set(e.detail.tab);
+    // Reset snippets panel view when switching away from flow.
+    if (e.detail.tab !== 'flow') {
+      hideSnippetsPanel();
+    }
   }
 
   function handleModelChange(e) {
@@ -175,6 +187,7 @@
 
   function handleNewFlow() {
     newFlow();
+    hideSnippetsPanel();
   }
 
   function handleSaveFlow(e) {
@@ -183,6 +196,12 @@
 
   function handleClearFlowView() {
     clearFlowView();
+  }
+
+  // ─── Snippet event handlers ───
+
+  function handleManageSnippets() {
+    showSnippetsPanel();
   }
 
   // ─── Agent event handlers ───
@@ -249,6 +268,8 @@
     telegramChats={$telegramChats}
     activeTelegramChatId={$activeTelegramChatId}
     telegramStatus={$telegramStatus}
+    snippets={$snippets}
+    managingSnippets={$managingSnippets}
     on:newChat={handleNewSession}
     on:selectChat={handleSelectChat}
     on:deleteChat={handleDeleteChat}
@@ -260,6 +281,7 @@
     on:newAgentTask={handleNewAgentTask}
     on:selectAgentTask={handleSelectAgentTask}
     on:deleteAgentTask={handleDeleteAgentTask}
+    on:manageSnippets={handleManageSnippets}
     on:openSettings={() => showSettings.set(true)}
   />
 
@@ -273,12 +295,16 @@
     />
 
     {#if $activeTab === 'flow'}
-      <FlowPanel
-        viewingTranscript={$viewingTranscript}
-        on:save={handleSaveFlow}
-        on:clearView={handleClearFlowView}
-        on:openSettings={() => showSettings.set(true)}
-      />
+      {#if $managingSnippets}
+        <SnippetsPanel />
+      {:else}
+        <FlowPanel
+          viewingTranscript={$viewingTranscript}
+          on:save={handleSaveFlow}
+          on:clearView={handleClearFlowView}
+          on:openSettings={() => showSettings.set(true)}
+        />
+      {/if}
     {:else if $activeTab === 'agents'}
       {#if $agentPhase === 'welcome'}
         <main class="chat-area">
@@ -291,6 +317,7 @@
           bind:this={agentWelcomeRef}
           disabled={$agentLoading || !$ready}
           loading={$agentLoading}
+          configuredProviders={$configuredProviders}
           on:send={handleAgentWelcomeSend}
           on:cancel={handleAgentCancel}
           on:modelChange={handleModelChange}
@@ -368,6 +395,7 @@
           bind:this={chatInputRef}
           disabled={$loading || !$ready}
           loading={$loading}
+          configuredProviders={$configuredProviders}
           on:send={handleSend}
           on:cancel={handleCancel}
           on:modelChange={handleModelChange}

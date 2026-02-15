@@ -45,6 +45,9 @@ export const isFirstMessage = writable(true);
 // Files produced during the chat session
 export const chatCreatedFiles = writable([]);
 
+// Configured providers (which API keys are set)
+export const configuredProviders = writable([]);
+
 // Telegram chat state
 export const telegramChats = writable([]);
 export const activeTelegramChatId = writable(null);
@@ -61,6 +64,7 @@ export function applyStatus(status) {
   agentName.set(status.agentName || 'Talon');
   userName.set(status.userName || '');
   telegramStatus.set(status.telegramStatus || 'stopped');
+  configuredProviders.set(status.configuredProviders || []);
   if (!status.ready && status.error) {
     initError.set(status.error);
   } else {

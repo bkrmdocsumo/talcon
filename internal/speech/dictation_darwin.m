@@ -343,6 +343,202 @@ void TypeTextViaClipboard(const char *text) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Focus Management — save and restore the frontmost application.
+//
+// During the grammar-fix flow the Talon overlay / main window may steal
+// focus while the LLM call is in flight. These helpers let us remember
+// which app the user was actually working in and bring it back before we
+// try to paste / replace text.
+// ═══════════════════════════════════════════════════════════════════════
+
+static NSRunningApplication *savedFrontApp = nil;
+static pid_t savedFrontPid = 0;
+
+void SaveFocusedApp(void) {
+    NSRunningApplication *app = [[NSWorkspace sharedWorkspace] frontmostApplication];
+    if (app) {
+        savedFrontApp = app;
+        savedFrontPid = app.processIdentifier;
+    }
+}
+
+void RestoreFocusedApp(void) {
+    if (savedFrontApp) {
+        [savedFrontApp activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+        // Give the app a moment to come to front.
+        usleep(150000); // 150 ms
+        savedFrontApp = nil;
+        savedFrontPid = 0;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Text Extraction — read the currently selected text from the focused
+// application.
+//
+// Primary strategy: use the Accessibility API (kAXSelectedTextAttribute)
+// to read the selected text directly — no clipboard manipulation needed
+// and no interference from physically-held modifier keys.
+//
+// Fallback: simulate Cmd+C using a *private* event source (so held
+// modifier keys don't leak into the synthesised keystroke) and read
+// from the clipboard.
+//
+// Returns a strdup'd C string the caller must free(), or NULL if nothing
+// was selected.
+// Requires Accessibility permission.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Try reading selected text via the Accessibility API.
+static NSString* getSelectedTextViaAX(void) {
+    if (!AXIsProcessTrusted()) return nil;
+
+    AXUIElementRef sysWide = AXUIElementCreateSystemWide();
+    if (!sysWide) return nil;
+
+    AXUIElementRef focusedApp = NULL;
+    AXError err = AXUIElementCopyAttributeValue(sysWide, kAXFocusedApplicationAttribute,
+                                                (CFTypeRef *)&focusedApp);
+    if (err != kAXErrorSuccess || !focusedApp) {
+        CFRelease(sysWide);
+        return nil;
+    }
+
+    AXUIElementRef focusedEl = NULL;
+    err = AXUIElementCopyAttributeValue(focusedApp, kAXFocusedUIElementAttribute,
+                                        (CFTypeRef *)&focusedEl);
+    if (err != kAXErrorSuccess || !focusedEl) {
+        CFRelease(focusedApp);
+        CFRelease(sysWide);
+        return nil;
+    }
+
+    CFTypeRef selectedTextRef = NULL;
+    err = AXUIElementCopyAttributeValue(focusedEl, kAXSelectedTextAttribute, &selectedTextRef);
+
+    CFRelease(focusedEl);
+    CFRelease(focusedApp);
+    CFRelease(sysWide);
+
+    if (err != kAXErrorSuccess || !selectedTextRef) return nil;
+
+    NSString *text = (__bridge_transfer NSString *)selectedTextRef;
+    return (text && text.length > 0) ? text : nil;
+}
+
+// Fallback: simulate Cmd+C with a private event source and read the clipboard.
+static NSString* getSelectedTextViaCmdC(void) {
+    NSPasteboard *pb = [NSPasteboard generalPasteboard];
+
+    // Save the current clipboard text so we can restore it afterwards.
+    NSString *savedText = [[pb stringForType:NSPasteboardTypeString] copy];
+
+    // Clear the clipboard so we can detect whether Cmd+C actually copied anything.
+    [pb clearContents];
+    usleep(50000); // 50 ms
+
+    // Use kCGEventSourceStatePrivate so the synthesised keystroke does NOT
+    // inherit the physical modifier-key state (the hotkey modifier may still
+    // be held down at this point).
+    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
+
+    CGEventRef keyDown = CGEventCreateKeyboardEvent(source, (CGKeyCode)8, true);  // 8 = 'C'
+    CGEventSetFlags(keyDown, kCGEventFlagMaskCommand);
+
+    CGEventRef keyUp = CGEventCreateKeyboardEvent(source, (CGKeyCode)8, false);
+    CGEventSetFlags(keyUp, kCGEventFlagMaskCommand);
+
+    CGEventPost(kCGHIDEventTap, keyDown);
+    CGEventPost(kCGHIDEventTap, keyUp);
+
+    CFRelease(keyDown);
+    CFRelease(keyUp);
+    if (source) CFRelease(source);
+
+    // Wait for the target app to place content on the clipboard.
+    usleep(200000); // 200 ms
+
+    // Read the clipboard.
+    NSString *selectedText = [pb stringForType:NSPasteboardTypeString];
+
+    // Restore the original clipboard content.
+    [pb clearContents];
+    if (savedText) {
+        [pb setString:savedText forType:NSPasteboardTypeString];
+    }
+
+    return (selectedText && selectedText.length > 0) ? selectedText : nil;
+}
+
+char* CopySelectedText(void) {
+    // Primary: Accessibility API — fast, reliable, no clipboard side-effects.
+    NSString *text = getSelectedTextViaAX();
+
+    // Fallback: Cmd+C simulation with private event source.
+    if (!text) {
+        text = getSelectedTextViaCmdC();
+    }
+
+    if (text && text.length > 0) {
+        return strdup([text UTF8String]); // caller must free()
+    }
+    return NULL;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Text Replacement — replace the currently selected text in the focused
+// application with new text.
+//
+// Primary strategy: use the Accessibility API (kAXSelectedTextAttribute)
+// to write directly — avoids clipboard manipulation and focus issues.
+//
+// Fallback: use TypeTextViaClipboard (Cmd+V simulation).
+//
+// Returns 1 on success, 0 on failure.
+// ═══════════════════════════════════════════════════════════════════════
+
+int ReplaceSelectedText(const char *newText) {
+    NSString *replacement = [NSString stringWithUTF8String:newText];
+
+    // Try writing via the Accessibility API first.
+    if (AXIsProcessTrusted()) {
+        AXUIElementRef sysWide = AXUIElementCreateSystemWide();
+        if (sysWide) {
+            AXUIElementRef focusedApp = NULL;
+            AXError err = AXUIElementCopyAttributeValue(sysWide, kAXFocusedApplicationAttribute,
+                                                        (CFTypeRef *)&focusedApp);
+            if (err == kAXErrorSuccess && focusedApp) {
+                AXUIElementRef focusedEl = NULL;
+                err = AXUIElementCopyAttributeValue(focusedApp, kAXFocusedUIElementAttribute,
+                                                    (CFTypeRef *)&focusedEl);
+                if (err == kAXErrorSuccess && focusedEl) {
+                    // Try to set the selected text directly.
+                    err = AXUIElementSetAttributeValue(focusedEl, kAXSelectedTextAttribute,
+                                                      (__bridge CFTypeRef)replacement);
+                    CFRelease(focusedEl);
+                    CFRelease(focusedApp);
+                    CFRelease(sysWide);
+
+                    if (err == kAXErrorSuccess) {
+                        return 1; // success via AX API
+                    }
+                    // Fall through to clipboard fallback.
+                } else {
+                    CFRelease(focusedApp);
+                    CFRelease(sysWide);
+                }
+            } else {
+                CFRelease(sysWide);
+            }
+        }
+    }
+
+    // Fallback: use clipboard paste.
+    TypeTextViaClipboard(newText);
+    return 1;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Accessibility Permission Check
 //
 // CGEventPost (used for pasting) requires the app to be trusted for

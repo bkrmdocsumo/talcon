@@ -17,6 +17,7 @@ type SettingsPayload struct {
 	SpeechProvider string `json:"speech_provider"` // "whisper" or "deepgram"
 	SpeechModel    string `json:"speech_model"`    // "gpt-4o-mini-transcribe", "gpt-4o-transcribe", "whisper-1"
 	OpenAIKey      string `json:"openai_key"`
+	GeminiKey      string `json:"gemini_key"`
 	DeepgramKey    string `json:"deepgram_key"`
 	HotkeyEnabled  bool   `json:"hotkey_enabled"`
 	HotkeyModifier string `json:"hotkey_modifier"`
@@ -48,8 +49,12 @@ func (a *App) ChangeModel(modelID string) error {
 	if openaiKey == "" {
 		openaiKey = os.Getenv("OPENAI_API_KEY")
 	}
+	geminiKey := cfg.GeminiKey
+	if geminiKey == "" {
+		geminiKey = os.Getenv("GEMINI_API_KEY")
+	}
 
-	client, err := llm.NewClientForModel(modelID, anthropicKey, openaiKey)
+	client, err := llm.NewClientForModel(modelID, anthropicKey, openaiKey, geminiKey)
 	if err != nil {
 		return err
 	}
@@ -81,6 +86,7 @@ func (a *App) GetSettings() (*SettingsPayload, error) {
 		SpeechProvider: cfg.SpeechProvider,
 		SpeechModel:    cfg.SpeechModel,
 		OpenAIKey:      cfg.OpenAIKey,
+		GeminiKey:      cfg.GeminiKey,
 		DeepgramKey:    cfg.DeepgramKey,
 		HotkeyEnabled:  cfg.HotkeyEnabled,
 		HotkeyModifier: modifier,
@@ -104,6 +110,7 @@ func (a *App) SaveSettings(payload SettingsPayload) error {
 	cfg.SpeechProvider = payload.SpeechProvider
 	cfg.SpeechModel = payload.SpeechModel
 	cfg.OpenAIKey = payload.OpenAIKey
+	cfg.GeminiKey = payload.GeminiKey
 	cfg.DeepgramKey = payload.DeepgramKey
 	cfg.HotkeyEnabled = payload.HotkeyEnabled
 	cfg.HotkeyModifier = payload.HotkeyModifier
@@ -131,7 +138,11 @@ func (a *App) SaveSettings(payload SettingsPayload) error {
 		if anthropicKey == "" {
 			anthropicKey = os.Getenv("ANTHROPIC_API_KEY")
 		}
-		if newClient, err := llm.NewClientForModel(a.agentCfg.Model, anthropicKey, reloadKey); err == nil {
+		reloadGeminiKey := cfg.GeminiKey
+		if reloadGeminiKey == "" {
+			reloadGeminiKey = os.Getenv("GEMINI_API_KEY")
+		}
+		if newClient, err := llm.NewClientForModel(a.agentCfg.Model, anthropicKey, reloadKey, reloadGeminiKey); err == nil {
 			a.deps.LLMClient = newClient
 			log.Printf("Settings saved — LLM client reloaded (model=%s)", a.agentCfg.Model)
 		}

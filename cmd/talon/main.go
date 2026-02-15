@@ -61,10 +61,15 @@ func main() {
 	if openaiKey == "" {
 		openaiKey = os.Getenv("OPENAI_API_KEY")
 	}
+	// Resolve Gemini key for Gemini models.
+	geminiKey := cfg.GeminiKey
+	if geminiKey == "" {
+		geminiKey = os.Getenv("GEMINI_API_KEY")
+	}
 
 	// Initialise core components.
 	sessionMgr := session.NewManager(baseDir)
-	llmClient, err := llm.NewClientForModel(agentCfg.Model, cfg.AnthropicKey, openaiKey)
+	llmClient, err := llm.NewClientForModel(agentCfg.Model, cfg.AnthropicKey, openaiKey, geminiKey)
 	if err != nil {
 		log.Fatalf("create llm client: %v", err)
 	}

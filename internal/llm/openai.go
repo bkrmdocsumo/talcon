@@ -20,17 +20,21 @@ const openaiDefaultMaxTokens = 8192
 // It implements the LLMClient interface and translates between the
 // internal Anthropic-style message format and the OpenAI API format.
 type OpenAIClient struct {
-	APIKey     string
-	Model      string
-	HTTPClient *http.Client
+	APIKey        string
+	Model         string
+	BaseURL       string // API endpoint; defaults to openaiAPIURL.
+	ProviderLabel string // Human-readable provider name for error messages.
+	HTTPClient    *http.Client
 }
 
 // NewOpenAIClient creates a new OpenAI API client.
 func NewOpenAIClient(apiKey, model string) *OpenAIClient {
 	return &OpenAIClient{
-		APIKey:     apiKey,
-		Model:      model,
-		HTTPClient: &http.Client{},
+		APIKey:        apiKey,
+		Model:         model,
+		BaseURL:       openaiAPIURL,
+		ProviderLabel: "OpenAI",
+		HTTPClient:    &http.Client{},
 	}
 }
 
@@ -268,12 +272,21 @@ func (c *OpenAIClient) SendMessages(ctx context.Context, system string, messages
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openaiAPIURL, bytes.NewReader(payload))
+	apiURL := c.BaseURL
+	if apiURL == "" {
+		apiURL = openaiAPIURL
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	label := c.ProviderLabel
+	if label == "" {
+		label = "OpenAI"
+	}
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -287,7 +300,7 @@ func (c *OpenAIClient) SendMessages(ctx context.Context, system string, messages
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("%s API error (status %d): %s", label, resp.StatusCode, string(body))
 	}
 
 	return c.parseResponse(body)
@@ -364,12 +377,21 @@ func (c *OpenAIClient) SendMessagesStream(ctx context.Context, system string, me
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openaiAPIURL, bytes.NewReader(payload))
+	apiURL := c.BaseURL
+	if apiURL == "" {
+		apiURL = openaiAPIURL
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	label := c.ProviderLabel
+	if label == "" {
+		label = "OpenAI"
+	}
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -379,7 +401,7 @@ func (c *OpenAIClient) SendMessagesStream(ctx context.Context, system string, me
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("%s API error (status %d): %s", label, resp.StatusCode, string(body))
 	}
 
 	return c.parseStreamResponse(resp.Body, onDelta)

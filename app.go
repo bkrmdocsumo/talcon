@@ -133,8 +133,18 @@ func (a *App) initCore(cfg *config.Config, baseDir string) error {
 	if anthropicKey == "" {
 		anthropicKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
-	if anthropicKey == "" {
-		return fmt.Errorf("No API key found. Add your Anthropic API key in Settings to get started.")
+	openaiKey := cfg.OpenAIKey
+	if openaiKey == "" {
+		openaiKey = os.Getenv("OPENAI_API_KEY")
+	}
+	geminiKey := cfg.GeminiKey
+	if geminiKey == "" {
+		geminiKey = os.Getenv("GEMINI_API_KEY")
+	}
+
+	// Require at least one provider key to be configured.
+	if anthropicKey == "" && openaiKey == "" && geminiKey == "" {
+		return fmt.Errorf("No API key found. Add at least one API key (Anthropic, OpenAI, or Gemini) in Settings to get started.")
 	}
 
 	agentCfg, ok := cfg.Agents["main"]
@@ -144,14 +154,22 @@ func (a *App) initCore(cfg *config.Config, baseDir string) error {
 
 	sessionMgr := session.NewManager(baseDir)
 
-	openaiKey := cfg.OpenAIKey
-	if openaiKey == "" {
-		openaiKey = os.Getenv("OPENAI_API_KEY")
-	}
-
-	llmClient, err := llm.NewClientForModel(agentCfg.Model, anthropicKey, openaiKey)
+	llmClient, err := llm.NewClientForModel(agentCfg.Model, anthropicKey, openaiKey, geminiKey)
 	if err != nil {
-		llmClient = llm.NewClient(anthropicKey, agentCfg.Model)
+		// The default model's provider key may not be configured.
+		// Fall back to whichever provider has a key available.
+		switch {
+		case anthropicKey != "":
+			llmClient = llm.NewClient(anthropicKey, "claude-sonnet-4-5-20250929")
+			agentCfg.Model = "claude-sonnet-4-5-20250929"
+		case openaiKey != "":
+			llmClient = llm.NewOpenAIClient(openaiKey, "gpt-4o")
+			agentCfg.Model = "gpt-4o"
+		case geminiKey != "":
+			llmClient = llm.NewGeminiClient(geminiKey, "gemini-2.0-flash")
+			agentCfg.Model = "gemini-2.0-flash"
+		}
+		log.Printf("Default model unavailable, fell back to %s", agentCfg.Model)
 	}
 
 	toolRegistry := tools.NewRegistry()
@@ -209,15 +227,57 @@ func (a *App) GetStatus() map[string]interface{} {
 	}
 
 	result := map[string]interface{}{
-		"ready":          a.ready,
-		"agentName":      a.agentCfg.Name,
-		"telegramStatus": tgStatus,
-		"userName":       displayName,
+		"ready":              a.ready,
+		"agentName":          a.agentCfg.Name,
+		"telegramStatus":     tgStatus,
+		"userName":           displayName,
+		"configuredProviders": a.getConfiguredProviders(),
 	}
 	if !a.ready {
 		result["error"] = a.initError
 	}
 	return result
+}
+
+// getConfiguredProviders returns a list of provider names that have an API key
+// configured (in the config file or via environment variables).
+func (a *App) getConfiguredProviders() []string {
+	var providers []string
+
+	baseDir, err := config.TalonDir()
+	if err != nil {
+		return providers
+	}
+	cfg, err := config.Load(baseDir)
+	if err != nil {
+		return providers
+	}
+
+	anthropicKey := cfg.AnthropicKey
+	if anthropicKey == "" {
+		anthropicKey = os.Getenv("ANTHROPIC_API_KEY")
+	}
+	if anthropicKey != "" {
+		providers = append(providers, "anthropic")
+	}
+
+	openaiKey := cfg.OpenAIKey
+	if openaiKey == "" {
+		openaiKey = os.Getenv("OPENAI_API_KEY")
+	}
+	if openaiKey != "" {
+		providers = append(providers, "openai")
+	}
+
+	geminiKey := cfg.GeminiKey
+	if geminiKey == "" {
+		geminiKey = os.Getenv("GEMINI_API_KEY")
+	}
+	if geminiKey != "" {
+		providers = append(providers, "gemini")
+	}
+
+	return providers
 }
 
 // OpenLogFile opens the application log file in the default text editor.

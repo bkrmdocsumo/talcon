@@ -5,6 +5,7 @@
 
   export let disabled = false;
   export let loading = false;
+  export let configuredProviders = [];
   let input = '';
   let textareaEl;
   let fileInputEl;
@@ -41,15 +42,30 @@
   let selectedModel = 'Sonnet 4.5';
   let showModelMenu = false;
   const models = [
-    { id: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5' },
-    { id: 'claude-opus-4-6', label: 'Opus 4.6' },
-    { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
-    { id: 'gpt-4o', label: 'GPT-4o' },
-    { id: 'gpt-5.2', label: 'GPT-5.2' },
-    { id: 'gpt-5-mini', label: 'GPT-5 Mini' },
+    { id: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5', provider: 'anthropic' },
+    { id: 'claude-opus-4-6', label: 'Opus 4.6', provider: 'anthropic' },
+    { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', provider: 'anthropic' },
+    { id: 'gpt-4o', label: 'GPT-4o', provider: 'openai' },
+    { id: 'gpt-5.2', label: 'GPT-5.2', provider: 'openai' },
+    { id: 'gpt-5-mini', label: 'GPT-5 Mini', provider: 'openai' },
+    { id: 'gemini-3-flash-preview', label: 'Gemini Flash', provider: 'gemini' },
+    { id: 'gemini-3-pro-preview', label: 'Gemini Pro', provider: 'gemini' },
   ];
 
   const dispatch = createEventDispatcher();
+
+  // Only show models whose provider has a configured API key.
+  $: filteredModels = configuredProviders.length > 0
+    ? models.filter(m => configuredProviders.includes(m.provider))
+    : models;
+
+  // Auto-switch to the first available model if the current selection is no
+  // longer in the filtered list (e.g. user removed an API key).
+  $: if (filteredModels.length > 0 && !filteredModels.find(m => m.label === selectedModel)) {
+    const fallback = filteredModels[0];
+    selectedModel = fallback.label;
+    dispatch('modelChange', { id: fallback.id, label: fallback.label });
+  }
 
   // Accepted file types
   const ACCEPTED_TYPES = [
@@ -371,7 +387,7 @@
 
           {#if showModelMenu}
             <div class="model-menu" on:click|stopPropagation on:keydown|stopPropagation role="menu">
-              {#each models as model}
+              {#each filteredModels as model}
                 <button
                   class="model-option"
                   class:selected={model.label === selectedModel}

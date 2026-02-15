@@ -13,6 +13,7 @@
   let settingsSpeechProvider = 'whisper';
   let settingsSpeechModel = 'gpt-4o-mini-transcribe';
   let settingsOpenAIKey = '';
+  let settingsGeminiKey = '';
   let settingsDeepgramKey = '';
   let settingsHotkeyEnabled = false;
   let settingsHotkeyModifier = 'left_option';
@@ -34,6 +35,7 @@
       settingsSpeechProvider = s.speech_provider || 'whisper';
       settingsSpeechModel = s.speech_model || 'gpt-4o-mini-transcribe';
       settingsOpenAIKey = s.openai_key || '';
+      settingsGeminiKey = s.gemini_key || '';
       settingsDeepgramKey = s.deepgram_key || '';
       settingsHotkeyEnabled = s.hotkey_enabled || false;
       settingsHotkeyModifier = s.hotkey_modifier || 'right_option';
@@ -65,6 +67,7 @@
         speech_provider: settingsSpeechProvider,
         speech_model: settingsSpeechModel,
         openai_key: settingsOpenAIKey.trim(),
+        gemini_key: settingsGeminiKey.trim(),
         deepgram_key: settingsDeepgramKey.trim(),
         hotkey_enabled: settingsHotkeyEnabled,
         hotkey_modifier: settingsHotkeyModifier,
@@ -175,6 +178,18 @@
             spellcheck="false"
           />
           <p class="field-hint">Used for GPT chat models and speech-to-text. Get one at platform.openai.com</p>
+
+          <label class="field-label" for="settings-gemini-key">Google Gemini API Key</label>
+          <input
+            id="settings-gemini-key"
+            type="password"
+            class="field-input"
+            bind:value={settingsGeminiKey}
+            placeholder="AIza..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <p class="field-hint">Used for Gemini chat models. Get one at aistudio.google.com</p>
 
           <div class="tg-status-section">
             <div class="tg-status-row">

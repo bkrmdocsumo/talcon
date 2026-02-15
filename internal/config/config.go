@@ -28,6 +28,7 @@ type Config struct {
 	SpeechProvider string `json:"speech_provider"` // "whisper" (default) or "deepgram"
 	SpeechModel    string `json:"speech_model"`    // OpenAI model: "gpt-4o-mini-transcribe" (default), "gpt-4o-transcribe", "whisper-1"
 	OpenAIKey      string `json:"openai_key"`      // OpenAI API key (for GPT chat models + Whisper/GPT-4o transcribe)
+	GeminiKey      string `json:"gemini_key"`      // Google Gemini API key (for Gemini chat models)
 	DeepgramKey    string `json:"deepgram_key"`    // Deepgram API key
 
 	// Global push-to-talk dictation — hold a modifier key to record, release to transcribe & paste.
