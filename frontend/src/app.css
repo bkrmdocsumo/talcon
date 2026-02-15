@@ -1,0 +1,58 @@
+:root {
+  /* Warm dark theme inspired by the design */
+  --bg-primary: #1a1816;
+  --bg-secondary: #211f1c;
+  --bg-tertiary: #2a2826;
+  --bg-sidebar: #1a1816;
+  --bg-input: #2a2826;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+
+  --text-primary: #e8e0d4;
+  --text-secondary: #a09888;
+  --text-muted: #6b6358;
+  --text-greeting: #c8b8a0;
+
+  --border: #2e2b28;
+  --border-light: #3a3633;
+
+  --accent: #c4734b;
+  --accent-hover: #b5623a;
+  --accent-glow: rgba(196, 115, 75, 0.2);
+
+  --danger: #ef4444;
+
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+
+  --sidebar-width: 260px;
+  --header-height: 48px;
+}
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  height: 100%;
+  width: 100%;
+}
+
+::selection {
+  background: var(--accent);
+  color: white;
+}
