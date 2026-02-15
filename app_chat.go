@@ -82,7 +82,7 @@ func (a *App) SendMessageWithFiles(input string, files []FileAttachment) (*ChatR
 }
 
 // SendMessageStream starts a streaming agent turn for a plain text message.
-// It returns immediately; results are delivered via "stream:event" Wails events.
+// It returns immediately; results are delivered via "chat:stream:event" Wails events.
 func (a *App) SendMessageStream(input string) error {
 	if !a.ready {
 		return fmt.Errorf("%s", a.initError)
@@ -91,40 +91,47 @@ func (a *App) SendMessageStream(input string) error {
 	if err != nil {
 		return fmt.Errorf("marshal input: %w", err)
 	}
-	go a.runStream(content, "")
+	sid := a.sessionID // capture before goroutine to avoid races
+	go a.runStream(sid, content, "", "chat:stream:event")
 	return nil
 }
 
 // SendMessageStreamWithFiles starts a streaming agent turn with file attachments.
-// It returns immediately; results are delivered via "stream:event" Wails events.
+// It returns immediately; results are delivered via "chat:stream:event" Wails events.
 func (a *App) SendMessageStreamWithFiles(input string, files []FileAttachment) error {
 	if !a.ready {
 		return fmt.Errorf("%s", a.initError)
 	}
 	content := buildUserContent(input, files)
-	go a.runStream(content, "")
+	sid := a.sessionID // capture before goroutine to avoid races
+	go a.runStream(sid, content, "", "chat:stream:event")
 	return nil
 }
 
 // runStream executes a streaming agent turn, emitting events to the frontend
-// as content arrives from the LLM. If workspaceDir is non-empty, files are
-// written to that directory instead of the default ~/.talon/sessions/{id}/.
-func (a *App) runStream(content json.RawMessage, workspaceDir string) {
+// as content arrives from the LLM. sessionID identifies the conversation so
+// events can be routed correctly when multiple streams run concurrently.
+// If workspaceDir is non-empty, files are written to that directory instead
+// of the default ~/.talon/sessions/{id}/.
+// eventName specifies the Wails event channel to emit on (e.g. "chat:stream:event"
+// or "agent:stream:event") so that chat and agent streams don't interfere.
+func (a *App) runStream(sessionID string, content json.RawMessage, workspaceDir string, eventName string) {
 	// Create a cancellable child context for this stream.
 	streamCtx, cancel := context.WithCancel(a.ctx)
 	a.streamMu.Lock()
-	a.streamCancel = cancel
+	a.streamCancels[sessionID] = cancel
 	a.streamMu.Unlock()
 
 	defer func() {
 		a.streamMu.Lock()
-		a.streamCancel = nil
+		delete(a.streamCancels, sessionID)
 		a.streamMu.Unlock()
 		cancel()
 	}()
 
 	emit := func(evt agent.StreamEvent) {
 		data := map[string]interface{}{
+			"session_id": sessionID,
 			"type":       evt.Type,
 			"content":    evt.Content,
 			"tool_name":  evt.ToolName,
@@ -147,7 +154,7 @@ func (a *App) runStream(content json.RawMessage, workspaceDir string) {
 			}
 			data["todo_items"] = items
 		}
-		wailsRuntime.EventsEmit(a.ctx, "stream:event", data)
+		wailsRuntime.EventsEmit(a.ctx, eventName, data)
 	}
 
 	// If a custom workspace dir is provided (e.g. agent tasks use ~/.talon/agents/),
@@ -159,11 +166,12 @@ func (a *App) runStream(content json.RawMessage, workspaceDir string) {
 		streamCtx = tools.WithSessionDir(streamCtx, workspaceDir)
 	}
 
-	result, err := agent.RunAgentTurnStream(streamCtx, a.sessionID, content, a.agentCfg, a.deps, emit)
+	result, err := agent.RunAgentTurnStream(streamCtx, sessionID, content, a.agentCfg, a.deps, emit)
 	if err != nil {
-		wailsRuntime.EventsEmit(a.ctx, "stream:event", map[string]interface{}{
-			"type":  "error",
-			"error": err.Error(),
+		wailsRuntime.EventsEmit(a.ctx, eventName, map[string]interface{}{
+			"session_id": sessionID,
+			"type":       "error",
+			"error":      err.Error(),
 		})
 		return
 	}
@@ -179,7 +187,8 @@ func (a *App) runStream(content json.RawMessage, workspaceDir string) {
 			"tool_input": s.ToolInput,
 		})
 	}
-	wailsRuntime.EventsEmit(a.ctx, "stream:event", map[string]interface{}{
+	wailsRuntime.EventsEmit(a.ctx, eventName, map[string]interface{}{
+		"session_id": sessionID,
 		"type":       "done",
 		"final_text": chatResp.FinalText,
 		"steps":      stepsData,
@@ -262,15 +271,26 @@ func buildUserContent(text string, files []FileAttachment) json.RawMessage {
 }
 
 
-// CancelStream cancels the currently running stream, if any.
-func (a *App) CancelStream() {
+// CancelStream cancels the stream for the given session ID. If sessionID is
+// empty, all active streams are cancelled (backward-compatible fallback).
+func (a *App) CancelStream(sessionID string) {
 	a.streamMu.Lock()
 	defer a.streamMu.Unlock()
 
-	if a.streamCancel != nil {
-		log.Println("Cancelling active stream")
-		a.streamCancel()
-		a.streamCancel = nil
+	if sessionID != "" {
+		if cancel, ok := a.streamCancels[sessionID]; ok {
+			log.Printf("Cancelling stream for session %s", sessionID)
+			cancel()
+			delete(a.streamCancels, sessionID)
+		}
+		return
+	}
+
+	// Fallback: cancel all active streams.
+	for sid, cancel := range a.streamCancels {
+		log.Printf("Cancelling stream for session %s", sid)
+		cancel()
+		delete(a.streamCancels, sid)
 	}
 }
 

@@ -38,9 +38,10 @@ type App struct {
 	tgCancel context.CancelFunc // cancels the running Telegram goroutine
 	tgStatus string             // "running", "stopped", "error: ..."
 
-	// Stream cancellation.
-	streamMu     sync.Mutex
-	streamCancel context.CancelFunc
+	// Stream cancellation — keyed by session ID so concurrent streams
+	// (e.g. multiple agent tasks) can be cancelled independently.
+	streamMu      sync.Mutex
+	streamCancels map[string]context.CancelFunc
 
 	// Voice recording state.
 	voiceMu            sync.Mutex
@@ -52,7 +53,9 @@ type App struct {
 
 // NewApp creates a new App instance.
 func NewApp() *App {
-	return &App{}
+	return &App{
+		streamCancels: make(map[string]context.CancelFunc),
+	}
 }
 
 // startup is called by Wails when the application starts.
@@ -82,62 +85,14 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 
-	if cfg.AnthropicKey == "" {
-		cfg.AnthropicKey = os.Getenv("ANTHROPIC_API_KEY")
-	}
-	if cfg.AnthropicKey == "" {
-		a.initError = "No API key found. Add your Anthropic API key in Settings to get started."
+	// Attempt core initialisation — may fail if no API key is configured yet.
+	if err := a.initCore(cfg, baseDir); err != nil {
+		a.initError = err.Error()
 		log.Printf("startup error: %s", a.initError)
 		return
 	}
 
-	// Resolve agent config.
-	agentCfg, ok := cfg.Agents["main"]
-	if !ok {
-		a.initError = "Agent 'main' not found in config"
-		log.Printf("startup error: %s", a.initError)
-		return
-	}
-
-	// Initialise core components.
-	sessionMgr := session.NewManager(baseDir)
-
-	// Resolve OpenAI key for GPT models (from config or env).
-	openaiKey := cfg.OpenAIKey
-	if openaiKey == "" {
-		openaiKey = os.Getenv("OPENAI_API_KEY")
-	}
-
-	llmClient, err := llm.NewClientForModel(agentCfg.Model, cfg.AnthropicKey, openaiKey)
-	if err != nil {
-		// Fall back to Anthropic client — the key check below will catch missing keys.
-		llmClient = llm.NewClient(cfg.AnthropicKey, agentCfg.Model)
-	}
-
-	toolRegistry := tools.NewRegistry()
-	tools.RegisterStandardTools(toolRegistry, baseDir)
-
-	// Start browser and register browser tools.
-	browserMgr := browser.NewManager()
-	if err := browserMgr.Start(cfg.BrowserHeadless); err != nil {
-		log.Printf("Warning: browser failed to start: %v (browser tools disabled)", err)
-	} else {
-		tools.RegisterBrowserTools(toolRegistry, browserMgr)
-		a.browserMgr = browserMgr
-		log.Printf("Browser started (headless=%t)", cfg.BrowserHeadless)
-	}
-
-	a.agentCfg = agentCfg
-	a.deps = agent.Deps{
-		SessionMgr:   sessionMgr,
-		LLMClient:    llmClient,
-		ToolRegistry: toolRegistry,
-		BaseDir:      baseDir,
-	}
-	a.sessionID = fmt.Sprintf("%s_gui_%d", agentCfg.SessionPrefix, time.Now().UnixMilli())
-	a.ready = true
-
-	log.Printf("Talon GUI ready (agent=%s, model=%s)", agentCfg.Name, agentCfg.Model)
+	log.Printf("Talon GUI ready (agent=%s, model=%s)", a.agentCfg.Name, a.agentCfg.Model)
 
 	// Always show the waveform icon in the macOS menu bar while the app is open.
 	speech.ShowMenuBarIcon()
@@ -167,6 +122,66 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.browserMgr != nil {
 		a.browserMgr.Close()
 	}
+}
+
+// initCore performs the core application initialisation: resolving the agent
+// configuration, creating the LLM client, registering tools, and starting the
+// browser. It is called from startup() and from SaveSettings() when the app
+// was not fully initialised at launch (e.g. missing API key on first run).
+func (a *App) initCore(cfg *config.Config, baseDir string) error {
+	anthropicKey := cfg.AnthropicKey
+	if anthropicKey == "" {
+		anthropicKey = os.Getenv("ANTHROPIC_API_KEY")
+	}
+	if anthropicKey == "" {
+		return fmt.Errorf("No API key found. Add your Anthropic API key in Settings to get started.")
+	}
+
+	agentCfg, ok := cfg.Agents["main"]
+	if !ok {
+		return fmt.Errorf("Agent 'main' not found in config")
+	}
+
+	sessionMgr := session.NewManager(baseDir)
+
+	openaiKey := cfg.OpenAIKey
+	if openaiKey == "" {
+		openaiKey = os.Getenv("OPENAI_API_KEY")
+	}
+
+	llmClient, err := llm.NewClientForModel(agentCfg.Model, anthropicKey, openaiKey)
+	if err != nil {
+		llmClient = llm.NewClient(anthropicKey, agentCfg.Model)
+	}
+
+	toolRegistry := tools.NewRegistry()
+	tools.RegisterStandardTools(toolRegistry, baseDir)
+
+	if a.browserMgr == nil {
+		browserMgr := browser.NewManager()
+		if err := browserMgr.Start(cfg.BrowserHeadless); err != nil {
+			log.Printf("Warning: browser failed to start: %v (browser tools disabled)", err)
+		} else {
+			tools.RegisterBrowserTools(toolRegistry, browserMgr)
+			a.browserMgr = browserMgr
+			log.Printf("Browser started (headless=%t)", cfg.BrowserHeadless)
+		}
+	} else {
+		tools.RegisterBrowserTools(toolRegistry, a.browserMgr)
+	}
+
+	a.agentCfg = agentCfg
+	a.deps = agent.Deps{
+		SessionMgr:   sessionMgr,
+		LLMClient:    llmClient,
+		ToolRegistry: toolRegistry,
+		BaseDir:      baseDir,
+	}
+	a.sessionID = fmt.Sprintf("%s_gui_%d", agentCfg.SessionPrefix, time.Now().UnixMilli())
+	a.ready = true
+	a.initError = ""
+
+	return nil
 }
 
 // IsReady returns whether the backend has been successfully initialised.

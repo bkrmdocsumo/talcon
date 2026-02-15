@@ -112,8 +112,17 @@ func (a *App) SaveSettings(payload SettingsPayload) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	// Hot-reload: rebuild the LLM client with the (possibly updated) keys.
-	if a.agentCfg.Model != "" {
+	if !a.ready {
+		// First-time setup: app could not fully initialise at launch (e.g. no
+		// API key was configured). Attempt full initialisation now.
+		if err := a.initCore(cfg, baseDir); err != nil {
+			log.Printf("Post-save init: %v", err)
+		} else {
+			log.Printf("Settings saved — app initialised (agent=%s, model=%s)", a.agentCfg.Name, a.agentCfg.Model)
+			speech.ShowMenuBarIcon()
+		}
+	} else if a.agentCfg.Model != "" {
+		// Hot-reload: rebuild the LLM client with the (possibly updated) keys.
 		reloadKey := cfg.OpenAIKey
 		if reloadKey == "" {
 			reloadKey = os.Getenv("OPENAI_API_KEY")
@@ -124,10 +133,6 @@ func (a *App) SaveSettings(payload SettingsPayload) error {
 		}
 		if newClient, err := llm.NewClientForModel(a.agentCfg.Model, anthropicKey, reloadKey); err == nil {
 			a.deps.LLMClient = newClient
-			if !a.ready {
-				a.ready = true
-				a.initError = ""
-			}
 			log.Printf("Settings saved — LLM client reloaded (model=%s)", a.agentCfg.Model)
 		}
 	}
@@ -189,5 +194,6 @@ func (a *App) loadSpeechConfig() (speech.TranscribeConfig, error) {
 		APIKey:   apiKey,
 		Language: "en",
 		Model:    model,
+		Prompt:   "Transcribe the following audio cleanly. Remove filler words such as um, uh, like, you know, so, and basically. Fix any grammatical errors and produce well-structured, punctuated sentences.",
 	}, nil
 }

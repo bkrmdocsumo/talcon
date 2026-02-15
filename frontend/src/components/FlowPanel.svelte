@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import { StartVoiceRecording, StopVoiceAndTranscribe } from '../../wailsjs/go/main/App';
+  import { StartVoiceRecording, StopVoiceAndTranscribe, GetSettings } from '../../wailsjs/go/main/App';
   import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
 
   const dispatch = createEventDispatcher();
@@ -19,8 +19,15 @@
   let copyFeedback = false;
   let saveFeedback = false;
 
+  // ─── Hotkey banner state ───
+  let hotkeyEnabled = false;
+  let hotkeyModifier = '';
+  let hotkeyBannerDismissed = false;
+  let hotkeyLoaded = false;
+
   // Event cleanup
   let cleanupVoiceError = null;
+  let cleanupSettingsSaved = null;
 
   // ─── Viewing mode ───
   $: isViewingHistory = viewingTranscript !== null && state === 'idle';
@@ -32,8 +39,50 @@
     sessionSeconds = viewingTranscript.duration || 0;
   }
 
+  // ─── Modifier key display names ───
+  const modifierLabels = {
+    'left_option': '⌥ Left Option',
+    'right_option': '⌥ Right Option',
+    'left_cmd': '⌘ Left Command',
+    'right_cmd': '⌘ Right Command',
+    'left_ctrl': '⌃ Left Control',
+    'right_ctrl': '⌃ Right Control',
+    'fn': 'fn',
+  };
+
+  function modifierDisplayName(mod) {
+    return modifierLabels[mod] || mod || 'fn';
+  }
+
+  async function loadHotkeyStatus() {
+    try {
+      const s = await GetSettings();
+      hotkeyEnabled = s.hotkey_enabled || false;
+      hotkeyModifier = s.hotkey_modifier || 'fn';
+      hotkeyLoaded = true;
+    } catch (_) {
+      hotkeyLoaded = true;
+    }
+  }
+
+  function openSettings() {
+    dispatch('openSettings');
+  }
+
   // ─── Lifecycle ───
+  function onSettingsSaved() {
+    // Re-fetch hotkey status so the banner updates instantly after saving settings.
+    hotkeyBannerDismissed = false;
+    loadHotkeyStatus();
+  }
+
   onMount(() => {
+    loadHotkeyStatus();
+
+    // Re-check hotkey status whenever settings are saved (from SettingsModal).
+    window.addEventListener('talon:settings-saved', onSettingsSaved);
+    cleanupSettingsSaved = () => window.removeEventListener('talon:settings-saved', onSettingsSaved);
+
     cleanupVoiceError = EventsOn('voice:error', (data) => {
       if (!data) return;
       error = data.error || 'An unknown error occurred.';
@@ -53,6 +102,7 @@
       sessionTimer = null;
     }
     if (cleanupVoiceError) cleanupVoiceError();
+    if (cleanupSettingsSaved) cleanupSettingsSaved();
   });
 
   // ─── Actions ───
@@ -159,6 +209,56 @@
 </script>
 
 <div class="flow-panel">
+  <!-- ─── Hotkey Banner ─── -->
+  {#if hotkeyLoaded && !hotkeyBannerDismissed}
+    {#if !hotkeyEnabled}
+      <div class="hotkey-banner hotkey-banner-enable">
+        <div class="hotkey-banner-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        <div class="hotkey-banner-body">
+          <span class="hotkey-banner-title">Voice-to-text anywhere on your Mac</span>
+          <span class="hotkey-banner-desc">Enable the global hotkey to dictate into any app — emails, docs, Slack, and more.</span>
+        </div>
+        <button class="hotkey-banner-btn" on:click={openSettings} type="button">
+          Enable in Settings
+        </button>
+        <button class="hotkey-banner-dismiss" on:click={() => hotkeyBannerDismissed = true} title="Dismiss">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    {:else}
+      <div class="hotkey-banner hotkey-banner-active">
+        <div class="hotkey-banner-icon hotkey-banner-icon-active">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        <div class="hotkey-banner-body">
+          <span class="hotkey-banner-title">Voice dictation is active</span>
+          <span class="hotkey-banner-desc">
+            Hold <kbd class="hotkey-kbd">{modifierDisplayName(hotkeyModifier)}</kbd> and speak — text will be typed into whatever app you're using.
+          </span>
+        </div>
+        <button class="hotkey-banner-dismiss" on:click={() => hotkeyBannerDismissed = true} title="Dismiss">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+    {/if}
+  {/if}
+
   <!-- Header bar when viewing a saved transcript -->
   {#if isViewingHistory}
     <div class="flow-view-header">
@@ -365,6 +465,128 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  /* ─── Hotkey Banner ─── */
+  .hotkey-banner {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: 720px;
+    width: 100%;
+    margin: 16px auto 0;
+    padding: 14px 18px;
+    border-radius: 14px;
+    animation: bannerSlideIn 0.3s ease;
+  }
+
+  @keyframes bannerSlideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .hotkey-banner-enable {
+    background: rgba(14, 240, 216, 0.06);
+    border: 1px solid rgba(14, 240, 216, 0.18);
+  }
+
+  .hotkey-banner-active {
+    background: rgba(34, 197, 94, 0.06);
+    border: 1px solid rgba(34, 197, 94, 0.18);
+  }
+
+  .hotkey-banner-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(14, 240, 216, 0.12);
+    border-radius: 10px;
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+
+  .hotkey-banner-icon-active {
+    background: rgba(34, 197, 94, 0.12);
+    color: #4ade80;
+  }
+
+  .hotkey-banner-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .hotkey-banner-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+  }
+
+  .hotkey-banner-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+  }
+
+  .hotkey-kbd {
+    display: inline-block;
+    padding: 1px 7px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 5px;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.2px;
+    vertical-align: baseline;
+  }
+
+  .hotkey-banner-btn {
+    padding: 7px 16px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: #000;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+  }
+
+  .hotkey-banner-btn:hover {
+    background: var(--accent-hover);
+    transform: scale(1.02);
+  }
+
+  .hotkey-banner-dismiss {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+    opacity: 0.5;
+  }
+
+  .hotkey-banner-dismiss:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
+    opacity: 1;
   }
 
   /* ─── View Header ─── */

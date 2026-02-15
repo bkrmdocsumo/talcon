@@ -16,6 +16,7 @@ import (
 
 // SendAgentTaskStream starts a streaming agent turn for an agent task.
 // Files are written to ~/.talon/agents/{session_id}/ instead of sessions/.
+// Events are emitted on "agent:stream:event" to avoid mixing with chat streams.
 func (a *App) SendAgentTaskStream(input string) error {
 	if !a.ready {
 		return fmt.Errorf("%s", a.initError)
@@ -25,13 +26,15 @@ func (a *App) SendAgentTaskStream(input string) error {
 		return fmt.Errorf("marshal input: %w", err)
 	}
 
+	sid := a.sessionID // capture before goroutine to avoid races
+
 	baseDir, err := config.TalonDir()
 	if err != nil {
 		return fmt.Errorf("resolve talon dir: %w", err)
 	}
-	workDir := filepath.Join(baseDir, "agents", a.sessionID)
+	workDir := filepath.Join(baseDir, "agents", sid)
 
-	go a.runStream(content, workDir)
+	go a.runStream(sid, content, workDir, "agent:stream:event")
 	return nil
 }
 

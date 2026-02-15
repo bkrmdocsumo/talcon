@@ -46,6 +46,9 @@ export async function refreshAgentTaskHistory() {
 }
 
 function handleAgentStreamEvent(data) {
+  // Ignore events from other sessions (prevents cross-talk when multiple streams run).
+  if (data.session_id && data.session_id !== get(activeAgentTaskId)) return;
+
   if (!get(agentIsStreaming)) return;
   const idx = get(agentStreamingIdx);
   if (idx < 0) return;
@@ -206,7 +209,7 @@ export async function startAgentTask(text, readyFlag) {
   _agentCurrentThinkingIdx = -1;
   agentPhase.set('workspace');
 
-  _agentStreamCleanup = EventsOn('stream:event', handleAgentStreamEvent);
+  _agentStreamCleanup = EventsOn('agent:stream:event', handleAgentStreamEvent);
 
   try {
     await SendAgentTaskStream(text);
@@ -238,7 +241,7 @@ export async function sendAgentFollowUp(text, readyFlag) {
   agentIsStreaming.set(true);
   _agentCurrentThinkingIdx = -1;
 
-  _agentStreamCleanup = EventsOn('stream:event', handleAgentStreamEvent);
+  _agentStreamCleanup = EventsOn('agent:stream:event', handleAgentStreamEvent);
 
   try {
     await SendAgentTaskStream(text);
@@ -257,7 +260,7 @@ export async function sendAgentFollowUp(text, readyFlag) {
 
 export async function cancelAgent() {
   try {
-    await CancelStream();
+    await CancelStream(get(activeAgentTaskId) || '');
   } catch (err) {
     console.error('Agent cancel failed:', err);
   }

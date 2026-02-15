@@ -12,6 +12,7 @@ package speech
 void ShowMenuBar(void);
 void HideMenuBar(void);
 void SetMenuBarState(int state);
+void SetMenuBarHotkeyLabel(const char *label);
 
 void SetHotkeyModifier(int keyCode);
 void StartHotkeyMonitor(void);
@@ -123,6 +124,9 @@ func SetupDictation(modifier string, cfgLoader func() (TranscribeConfig, error),
 	C.PreCreateDictationOverlay() // warm up NSPanel so first press is instant
 	C.StartHotkeyMonitor()
 
+	// Update the menu bar dropdown with the active hotkey info.
+	UpdateMenuBarHotkeyLabel(modifier)
+
 	log.Printf("[dictation] enabled — hold %q to record, release to transcribe & paste", modifier)
 }
 
@@ -130,6 +134,11 @@ func SetupDictation(modifier string, cfgLoader func() (TranscribeConfig, error),
 // The menu bar icon is managed separately (shown/hidden with the app lifecycle).
 func TeardownDictation() {
 	C.StopHotkeyMonitor()
+
+	// Reset the menu bar hotkey label.
+	cLabel := C.CString("Hotkey: not configured")
+	C.SetMenuBarHotkeyLabel(cLabel)
+	C.free(unsafe.Pointer(cLabel))
 
 	dictMu.Lock()
 	dictEnabled = false
@@ -149,6 +158,34 @@ func ShowMenuBarIcon() {
 // Call this at app shutdown.
 func HideMenuBarIcon() {
 	C.HideMenuBar()
+}
+
+// ModifierDisplayName returns a human-readable label for a modifier key string.
+func ModifierDisplayName(mod string) string {
+	switch mod {
+	case "left_option":
+		return "⌥ Left Option"
+	case "right_option":
+		return "⌥ Right Option"
+	case "left_cmd":
+		return "⌘ Left Command"
+	case "right_cmd":
+		return "⌘ Right Command"
+	case "left_ctrl":
+		return "⌃ Left Control"
+	case "right_ctrl":
+		return "⌃ Right Control"
+	default:
+		return mod
+	}
+}
+
+// UpdateMenuBarHotkeyLabel sets the hotkey info text shown in the menu bar dropdown.
+func UpdateMenuBarHotkeyLabel(modifier string) {
+	label := "Hold " + ModifierDisplayName(modifier) + " and speak"
+	cLabel := C.CString(label)
+	defer C.free(unsafe.Pointer(cLabel))
+	C.SetMenuBarHotkeyLabel(cLabel)
 }
 
 // IsDictationEnabled returns whether the dictation hotkey is active.

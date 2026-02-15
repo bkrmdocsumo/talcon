@@ -277,6 +277,7 @@
         viewingTranscript={$viewingTranscript}
         on:save={handleSaveFlow}
         on:clearView={handleClearFlowView}
+        on:openSettings={() => showSettings.set(true)}
       />
     {:else if $activeTab === 'agents'}
       {#if $agentPhase === 'welcome'}

@@ -14,48 +14,141 @@ extern void goDictationReleased(void);
 // Changes appearance to reflect recording / transcribing state.
 // ═══════════════════════════════════════════════════════════════════════
 
-static NSStatusItem *statusItem = nil;
-static NSImage *iconIdle         = nil;
+static NSStatusItem *statusItem  = nil;
+static NSImage      *iconIdle   = nil;
+static NSMenu       *statusMenu = nil;
+static NSMenuItem   *hotkeyMenuItem  = nil;
+static NSMenuItem   *statusMenuItem  = nil;
 
-static NSImage* createIdleIcon(void) {
-    if (@available(macOS 11.0, *)) {
-        NSImage *img = [NSImage imageWithSystemSymbolName:@"waveform"
-                                 accessibilityDescription:@"Talon"];
-        if (img) {
-            [img setTemplate:YES];
-            return img;
+// ─── Menu Action Handler ───
+@interface TalonMenuHandler : NSObject
+- (void)quitApp:(id)sender;
+- (void)showApp:(id)sender;
+@end
+
+@implementation TalonMenuHandler
+- (void)quitApp:(id)sender {
+    [[NSApplication sharedApplication] terminate:nil];
+}
+- (void)showApp:(id)sender {
+    [NSApp activateIgnoringOtherApps:YES];
+    // Bring the main window to front.
+    for (NSWindow *w in [NSApp windows]) {
+        if ([w isKindOfClass:[NSWindow class]] && w.isVisible) {
+            [w makeKeyAndOrderFront:nil];
+            break;
         }
     }
-    // Fallback: draw a small waveform (5 bars) for older macOS.
-    NSImage *img = [[NSImage alloc] initWithSize:NSMakeSize(18, 18)];
-    [img lockFocus];
-    [[NSColor labelColor] setFill];
-    CGFloat barW = 2, gap = 1.5;
-    CGFloat heights[] = {5, 9, 13, 9, 5};
-    CGFloat totalW = 5 * barW + 4 * gap;
-    CGFloat startX = (18 - totalW) / 2.0;
-    for (int i = 0; i < 5; i++) {
-        CGFloat h = heights[i];
-        CGFloat x = startX + i * (barW + gap);
-        CGFloat y = (18 - h) / 2.0;
-        [[NSBezierPath bezierPathWithRoundedRect:NSMakeRect(x, y, barW, h)
-                                         xRadius:1 yRadius:1] fill];
+}
+@end
+
+static TalonMenuHandler *menuHandler = nil;
+
+// Create a monochrome pinwheel/turbine icon for the macOS menu bar,
+// matching the Talon app icon shape.  Drawn as a template image so
+// macOS automatically renders it in white on dark menu bars and black
+// on light menu bars — matching the native look of other status icons.
+static NSImage* createMenuBarIcon(void) {
+    CGFloat size = 18.0;
+    NSImage *icon = [[NSImage alloc] initWithSize:NSMakeSize(size, size)];
+    [icon lockFocus];
+
+    CGContextRef cg = [[NSGraphicsContext currentContext] CGContext];
+    [[NSColor blackColor] setFill];
+
+    CGFloat cx = size / 2.0;
+    CGFloat cy = size / 2.0;
+    int blades = 6;
+
+    for (int i = 0; i < blades; i++) {
+        CGFloat angle = (2.0 * M_PI * i) / blades;
+
+        CGContextSaveGState(cg);
+        CGContextTranslateCTM(cg, cx, cy);
+        CGContextRotateCTM(cg, angle);
+
+        // One blade pointing up (+Y), curving clockwise.
+        // Extra bold to match the visual weight of other
+        // macOS menu-bar icons.
+        NSBezierPath *b = [NSBezierPath bezierPath];
+        [b moveToPoint:NSMakePoint(-1.4, 1.2)];
+        [b curveToPoint:NSMakePoint(3.4, 7.8)
+              controlPoint1:NSMakePoint(-0.6, 4.5)
+              controlPoint2:NSMakePoint(1.4, 6.8)];
+        [b curveToPoint:NSMakePoint(1.4, 1.2)
+              controlPoint1:NSMakePoint(2.2, 5.6)
+              controlPoint2:NSMakePoint(1.6, 3.2)];
+        [b closePath];
+        [b fill];
+
+        CGContextRestoreGState(cg);
     }
-    [img unlockFocus];
-    [img setTemplate:YES];
-    return img;
+
+    [icon unlockFocus];
+    [icon setTemplate:YES];  // Let macOS handle light/dark appearance.
+    return icon;
 }
 
 void ShowMenuBar(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (statusItem) return;
 
-        iconIdle = createIdleIcon();
+        iconIdle = createMenuBarIcon();
+
+        if (!menuHandler) {
+            menuHandler = [[TalonMenuHandler alloc] init];
+        }
 
         statusItem = [[NSStatusBar systemStatusBar]
             statusItemWithLength:NSVariableStatusItemLength];
         statusItem.button.image   = iconIdle;
         statusItem.button.toolTip = @"Talon — Voice Input";
+
+        // ─── Build menu ───
+        statusMenu = [[NSMenu alloc] init];
+
+        // Status line (idle by default) — with a small app icon.
+        statusMenuItem = [[NSMenuItem alloc]
+            initWithTitle:@"Talon — Voice Input"
+            action:nil keyEquivalent:@""];
+        [statusMenuItem setEnabled:NO];
+        {
+            NSImage *menuIcon = createMenuBarIcon();
+            if (menuIcon) {
+                [menuIcon setSize:NSMakeSize(16, 16)];
+                [statusMenuItem setImage:menuIcon];
+            }
+        }
+        [statusMenu addItem:statusMenuItem];
+
+        [statusMenu addItem:[NSMenuItem separatorItem]];
+
+        // Hotkey info line (disabled — informational only).
+        hotkeyMenuItem = [[NSMenuItem alloc]
+            initWithTitle:@"Hotkey: not configured"
+            action:nil keyEquivalent:@""];
+        [hotkeyMenuItem setEnabled:NO];
+        [statusMenu addItem:hotkeyMenuItem];
+
+        [statusMenu addItem:[NSMenuItem separatorItem]];
+
+        // Show Talon window.
+        NSMenuItem *showItem = [[NSMenuItem alloc]
+            initWithTitle:@"Show Talon"
+            action:@selector(showApp:) keyEquivalent:@""];
+        [showItem setTarget:menuHandler];
+        [statusMenu addItem:showItem];
+
+        [statusMenu addItem:[NSMenuItem separatorItem]];
+
+        // Quit.
+        NSMenuItem *quitItem = [[NSMenuItem alloc]
+            initWithTitle:@"Quit Talon"
+            action:@selector(quitApp:) keyEquivalent:@"q"];
+        [quitItem setTarget:menuHandler];
+        [statusMenu addItem:quitItem];
+
+        statusItem.menu = statusMenu;
     });
 }
 
@@ -64,25 +157,43 @@ void HideMenuBar(void) {
         if (statusItem) {
             [[NSStatusBar systemStatusBar] removeStatusItem:statusItem];
             statusItem = nil;
+            statusMenu = nil;
+            hotkeyMenuItem = nil;
+            statusMenuItem = nil;
+        }
+    });
+}
+
+// Update the hotkey label shown in the menu.
+// label: e.g. "Hold ⌥ Right Option and speak"
+void SetMenuBarHotkeyLabel(const char *label) {
+    NSString *str = [NSString stringWithUTF8String:label];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (hotkeyMenuItem) {
+            [hotkeyMenuItem setTitle:str];
         }
     });
 }
 
 // state: 0 = idle, 1 = recording, 2 = transcribing
 // Icon stays the same waveform — macOS shows its own orange mic indicator
-// automatically when the microphone is in use.  We only update the tooltip.
+// automatically when the microphone is in use.  We update the tooltip
+// and the status menu item text.
 void SetMenuBarState(int state) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!statusItem) return;
         switch (state) {
             case 1:
                 statusItem.button.toolTip = @"Talon — Recording…";
+                if (statusMenuItem) [statusMenuItem setTitle:@"Recording…"];
                 break;
             case 2:
                 statusItem.button.toolTip = @"Talon — Transcribing…";
+                if (statusMenuItem) [statusMenuItem setTitle:@"Transcribing…"];
                 break;
             default:
                 statusItem.button.toolTip = @"Talon — Voice Input";
+                if (statusMenuItem) [statusMenuItem setTitle:@"Talon — Voice Input"];
                 break;
         }
     });

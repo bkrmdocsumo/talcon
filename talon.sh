@@ -53,6 +53,7 @@ case "${1:-}" in
         echo "==> Creating DMG installer..."
 
         # Clean previous DMG artifacts
+        rm -rf /Users/bkrm/Docsumo/talon/build/*.dmg
         rm -rf "${DMG_DIR}"
         rm -f "${DMG_OUTPUT}"
         mkdir -p "${DMG_DIR}"

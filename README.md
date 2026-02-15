@@ -321,9 +321,3 @@ Requires microphone and accessibility permissions on macOS.
 | Telegram | [telegram-bot-api](https://github.com/go-telegram-bot-api/telegram-bot-api) |
 | Scheduling | [robfig/cron](https://github.com/robfig/cron) |
 | Speech | OpenAI Whisper / Deepgram + macOS AVFoundation |
-
----
-
-## License
-
-MIT

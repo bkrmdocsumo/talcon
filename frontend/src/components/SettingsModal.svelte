@@ -75,6 +75,9 @@
       const status = await GetStatus();
       dispatch('statusUpdate', status);
 
+      // Notify other components (e.g. FlowPanel banner) that settings changed.
+      window.dispatchEvent(new CustomEvent('talon:settings-saved'));
+
       setTimeout(() => {
         settingsSuccess = '';
       }, 2500);

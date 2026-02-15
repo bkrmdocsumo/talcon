@@ -35,6 +35,7 @@ type TranscribeConfig struct {
 	APIKey   string
 	Language string // e.g. "en"
 	Model    string // OpenAI model: "gpt-4o-mini-transcribe", "gpt-4o-transcribe", or "whisper-1"
+	Prompt   string // Optional prompt to guide transcription (e.g. remove filler words, fix grammar)
 }
 
 // TranscribeResult holds the result of a transcription.
@@ -120,6 +121,14 @@ func transcribeOpenAI(cfg TranscribeConfig, audio []byte, mimeType string) (*Tra
 	if cfg.Language != "" {
 		if err := w.WriteField("language", cfg.Language); err != nil {
 			return nil, fmt.Errorf("write language field: %w", err)
+		}
+	}
+
+	// prompt — optional text to guide the model's transcription style and vocabulary.
+	// Helps remove filler words, fix grammar, and improve overall transcription quality.
+	if cfg.Prompt != "" {
+		if err := w.WriteField("prompt", cfg.Prompt); err != nil {
+			return nil, fmt.Errorf("write prompt field: %w", err)
 		}
 	}
 

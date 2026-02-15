@@ -102,6 +102,9 @@ export async function refreshChatHistory() {
 }
 
 export function handleStreamEvent(data) {
+  // Ignore events from other sessions (prevents cross-talk when multiple streams run).
+  if (data.session_id && data.session_id !== get(activeChatId)) return;
+
   const idx = get(streamingIndex);
   if (idx < 0) return;
 
@@ -212,7 +215,7 @@ export async function sendMessage(text, files) {
   currentThinkingIdx.set(-1);
   loading.set(true);
 
-  _streamCleanup = EventsOn('stream:event', handleStreamEvent);
+  _streamCleanup = EventsOn('chat:stream:event', handleStreamEvent);
 
   try {
     if (files && files.length > 0) {
@@ -244,7 +247,7 @@ export async function sendMessage(text, files) {
 
 export async function cancelStream() {
   try {
-    await CancelStream();
+    await CancelStream(get(activeChatId) || '');
   } catch (err) {
     console.error('Cancel failed:', err);
   }

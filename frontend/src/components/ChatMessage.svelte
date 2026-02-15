@@ -3,6 +3,7 @@
   import { renderMarkdown } from '../lib/markdown.js';
   import { formatToolLabel } from '../lib/utils/formatters.js';
   import TypingIndicator from './TypingIndicator.svelte';
+  import LoadingSpinner from './LoadingSpinner.svelte';
   import appIcon from '../assets/appicon.png';
 
   export let message = null;   // { role, content, isError?, files?, steps? }
@@ -140,7 +141,7 @@
             {@html renderMarkdown(message.content)}
           {/if}
           {#if message.isStreaming && message.content}
-            <span class="streaming-cursor"></span>
+            <LoadingSpinner />
           {/if}
 
           <!-- Copy full message button -->
@@ -534,22 +535,6 @@
   .step-result-content {
     border-top: none;
     padding-top: 0;
-  }
-
-  /* ─── Streaming Cursor ─── */
-  .streaming-cursor {
-    display: inline-block;
-    width: 2px;
-    height: 1em;
-    background: var(--accent);
-    animation: cursorBlink 1s step-end infinite;
-    margin-left: 2px;
-    vertical-align: text-bottom;
-  }
-
-  @keyframes cursorBlink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0; }
   }
 
   /* ─── File Attachments ─── */

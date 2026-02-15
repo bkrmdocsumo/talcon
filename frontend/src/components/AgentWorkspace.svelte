@@ -5,6 +5,7 @@
   import AgentFileCard from './AgentFileCard.svelte';
   import AgentInfoPanel from './AgentInfoPanel.svelte';
   import TypingIndicator from './TypingIndicator.svelte';
+  import LoadingSpinner from './LoadingSpinner.svelte';
 
   export let taskTitle = '';
   export let messages = [];            // Array of { role: 'user'|'assistant', content, steps?, isStreaming? }
@@ -215,7 +216,7 @@
               <div class="agent-response" on:click={handleContentClick}>
                 {@html renderMarkdown(message.content)}
                 {#if message.isStreaming}
-                  <span class="streaming-cursor"></span>
+                  <LoadingSpinner />
                 {/if}
               </div>
 
@@ -639,22 +640,6 @@
 
   .agent-response :global(a:hover) {
     text-decoration: underline;
-  }
-
-  /* Streaming Cursor */
-  .streaming-cursor {
-    display: inline-block;
-    width: 2px;
-    height: 1em;
-    background: var(--accent);
-    animation: cursorBlink 1s step-end infinite;
-    margin-left: 2px;
-    vertical-align: text-bottom;
-  }
-
-  @keyframes cursorBlink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0; }
   }
 
   /* File Cards */

@@ -47,12 +47,13 @@ func main() {
 	app := NewApp()
 
 	err = wails.Run(&options.App{
-		Title:            "Talon",
-		Width:            1024,
-		Height:           768,
-		MinWidth:         800,
-		MinHeight:        600,
-		BackgroundColour: &options.RGBA{R: 10, G: 10, B: 15, A: 255},
+		Title:             "Talon",
+		Width:             1024,
+		Height:            768,
+		MinWidth:          800,
+		MinHeight:         600,
+		HideWindowOnClose: true,
+		BackgroundColour:  &options.RGBA{R: 10, G: 10, B: 15, A: 255},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
