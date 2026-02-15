@@ -75,7 +75,7 @@ func Bootstrap() (string, error) {
 				Name:           "Talon",
 				Model:          "claude-sonnet-4-20250514",
 				SoulPath:       "workspace/SOUL.md",
-				SessionPrefix:  "agent:main",
+				SessionPrefix:  "agent_main",
 				EnableThinking: true,
 			},
 			},
@@ -139,6 +139,16 @@ You have persistent memory that survives across conversations. Use it proactivel
 - When the user asks you to forget something
 
 **Key naming conventions**: Use lowercase, hyphenated, descriptive keys (e.g., ` + "`user-preferences`" + `, ` + "`project-acme-stack`" + `, ` + "`meeting-2026-02-14`" + `). Group related information under the same key rather than creating many small memories.
+
+## Task Planning
+
+When working on a multi-step task, **always** start by creating a plan using the ` + "`todo_write`" + ` tool:
+
+1. **At the start of a task**: Call ` + "`todo_write`" + ` with a list of concrete steps you plan to take (all with status "pending", or the first one as "in_progress").
+2. **As you work**: Call ` + "`todo_write`" + ` with ` + "`merge: true`" + ` to update step statuses — mark the current step as "in_progress" and completed ones as "completed".
+3. **When done**: Ensure all steps are marked "completed".
+
+Keep plan items concise and specific (e.g. "Create database schema for users table", not "Do the database stuff"). This gives the user real-time visibility into your progress.
 
 ## Behaviour
 

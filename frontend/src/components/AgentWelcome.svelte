@@ -37,6 +37,7 @@
     text-align: center;
     gap: 24px;
     padding-top: 10vh;
+    animation: welcomeFade 0.5s ease;
   }
 
   .welcome-heading {
@@ -55,11 +56,6 @@
     height: 40px;
     border-radius: 10px;
     object-fit: cover;
-  }
-
-  /* Subtle fade-in animation */
-  .welcome {
-    animation: welcomeFade 0.5s ease;
   }
 
   @keyframes welcomeFade {

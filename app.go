@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -126,7 +127,7 @@ func (a *App) startup(ctx context.Context) {
 		ToolRegistry: toolRegistry,
 		BaseDir:      baseDir,
 	}
-	a.sessionID = fmt.Sprintf("%s:gui:%d", agentCfg.SessionPrefix, time.Now().UnixMilli())
+	a.sessionID = fmt.Sprintf("%s_gui_%d", agentCfg.SessionPrefix, time.Now().UnixMilli())
 	a.ready = true
 
 	log.Printf("Talon GUI ready (agent=%s, model=%s)", agentCfg.Name, agentCfg.Model)
@@ -260,7 +261,7 @@ func (a *App) SendMessageStream(input string) error {
 		return fmt.Errorf("%s", a.initError)
 	}
 	content, _ := json.Marshal(input)
-	go a.runStream(content)
+	go a.runStream(content, "")
 	return nil
 }
 
@@ -271,13 +272,32 @@ func (a *App) SendMessageStreamWithFiles(input string, files []FileAttachment) e
 		return fmt.Errorf("%s", a.initError)
 	}
 	content := buildUserContent(input, files)
-	go a.runStream(content)
+	go a.runStream(content, "")
+	return nil
+}
+
+// SendAgentTaskStream starts a streaming agent turn for an agent task.
+// Files are written to ~/.talon/agents/{session_id}/ instead of sessions/.
+func (a *App) SendAgentTaskStream(input string) error {
+	if !a.ready {
+		return fmt.Errorf("%s", a.initError)
+	}
+	content, _ := json.Marshal(input)
+
+	baseDir, err := config.TalonDir()
+	if err != nil {
+		return fmt.Errorf("resolve talon dir: %w", err)
+	}
+	workDir := filepath.Join(baseDir, "agents", a.sessionID)
+
+	go a.runStream(content, workDir)
 	return nil
 }
 
 // runStream executes a streaming agent turn, emitting events to the frontend
-// as content arrives from the LLM.
-func (a *App) runStream(content json.RawMessage) {
+// as content arrives from the LLM. If workspaceDir is non-empty, files are
+// written to that directory instead of the default ~/.talon/sessions/{id}/.
+func (a *App) runStream(content json.RawMessage, workspaceDir string) {
 	// Create a cancellable child context for this stream.
 	streamCtx, cancel := context.WithCancel(a.ctx)
 	a.streamMu.Lock()
@@ -292,12 +312,39 @@ func (a *App) runStream(content json.RawMessage) {
 	}()
 
 	emit := func(evt agent.StreamEvent) {
-		wailsRuntime.EventsEmit(a.ctx, "stream:event", map[string]interface{}{
+		data := map[string]interface{}{
 			"type":       evt.Type,
 			"content":    evt.Content,
 			"tool_name":  evt.ToolName,
 			"tool_input": evt.ToolInput,
-		})
+		}
+		// For file_created events, include path and name fields for the frontend.
+		if evt.Type == "file_created" {
+			data["path"] = evt.Content   // Path is stored in Content
+			data["name"] = evt.ToolName  // File name is stored in ToolName
+		}
+		// For todo_update events, include the full todo items list.
+		if evt.Type == "todo_update" && evt.TodoItems != nil {
+			items := make([]map[string]interface{}, 0, len(evt.TodoItems))
+			for _, item := range evt.TodoItems {
+				items = append(items, map[string]interface{}{
+					"id":      item.ID,
+					"content": item.Content,
+					"status":  item.Status,
+				})
+			}
+			data["todo_items"] = items
+		}
+		wailsRuntime.EventsEmit(a.ctx, "stream:event", data)
+	}
+
+	// If a custom workspace dir is provided (e.g. agent tasks use ~/.talon/agents/),
+	// pre-set it in the context so the agent honours it instead of the default.
+	if workspaceDir != "" {
+		if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+			log.Printf("Warning: failed to create workspace dir %s: %v", workspaceDir, err)
+		}
+		streamCtx = tools.WithSessionDir(streamCtx, workspaceDir)
 	}
 
 	result, err := agent.RunAgentTurnStream(streamCtx, a.sessionID, content, a.agentCfg, a.deps, emit)
@@ -415,9 +462,16 @@ func (a *App) CancelStream() {
 	}
 }
 
-// NewSession starts a fresh conversation session and returns the new session ID.
+// NewSession starts a fresh conversation (chat) session and returns the new session ID.
 func (a *App) NewSession() string {
-	a.sessionID = fmt.Sprintf("%s:gui:%d", a.agentCfg.SessionPrefix, time.Now().UnixMilli())
+	a.sessionID = fmt.Sprintf("%s_gui_%d", a.agentCfg.SessionPrefix, time.Now().UnixMilli())
+	return a.sessionID
+}
+
+// NewAgentSession starts a fresh agent task session and returns the new session ID.
+// Agent sessions use "_agent_" in the ID to distinguish them from chat sessions.
+func (a *App) NewAgentSession() string {
+	a.sessionID = fmt.Sprintf("%s_agent_%d", a.agentCfg.SessionPrefix, time.Now().UnixMilli())
 	return a.sessionID
 }
 
@@ -430,12 +484,20 @@ func (a *App) GetSessionID() string {
 	return a.sessionID
 }
 
-// ListSessions returns metadata for all GUI sessions, sorted newest first.
+// ListSessions returns metadata for all GUI chat sessions, sorted newest first.
 func (a *App) ListSessions() ([]session.SessionInfo, error) {
 	if a.deps.SessionMgr == nil {
 		return []session.SessionInfo{}, nil
 	}
 	return a.deps.SessionMgr.ListGUISessions()
+}
+
+// ListAgentSessions returns metadata for all agent task sessions, sorted newest first.
+func (a *App) ListAgentSessions() ([]session.SessionInfo, error) {
+	if a.deps.SessionMgr == nil {
+		return []session.SessionInfo{}, nil
+	}
+	return a.deps.SessionMgr.ListAgentSessions()
 }
 
 // HistoryMessage is a simplified message format for loading past sessions
@@ -1088,6 +1150,88 @@ func (a *App) DeleteFlowTranscript(id string) error {
 
 	log.Printf("[flow] deleted transcript %s", id)
 	return nil
+}
+
+// ─── Agent Task Helpers ───
+
+// TaskFileInfo holds metadata about a file in an agent task's working directory.
+type TaskFileInfo struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+}
+
+// OpenFileInApp opens a file or directory in the default macOS application.
+func (a *App) OpenFileInApp(filePath string) error {
+	// Expand ~ prefix.
+	if strings.HasPrefix(filePath, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			filePath = filepath.Join(home, filePath[2:])
+		}
+	}
+
+	log.Printf("[agent] opening file: %s", filePath)
+	cmd := exec.Command("open", filePath)
+	return cmd.Run()
+}
+
+// GetTaskWorkDir returns the working directory path for an agent task.
+// Creates the directory if it doesn't exist. Agent task files live under
+// ~/.talon/agents/{taskID}/.
+func (a *App) GetTaskWorkDir(taskID string) (string, error) {
+	baseDir, err := config.TalonDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve talon dir: %w", err)
+	}
+
+	dir := filepath.Join(baseDir, "agents", taskID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("create task dir: %w", err)
+	}
+
+	return dir, nil
+}
+
+// ListTaskFiles returns a list of files in an agent task's working directory.
+// Agent task files live under ~/.talon/agents/{taskID}/.
+func (a *App) ListTaskFiles(taskID string) ([]TaskFileInfo, error) {
+	baseDir, err := config.TalonDir()
+	if err != nil {
+		return []TaskFileInfo{}, nil
+	}
+
+	dir := filepath.Join(baseDir, "agents", taskID)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []TaskFileInfo{}, nil
+		}
+		return nil, fmt.Errorf("read task dir: %w", err)
+	}
+
+	var files []TaskFileInfo
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		// Skip session metadata files.
+		if e.Name() == "session.json" || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+
+		files = append(files, TaskFileInfo{
+			Name: e.Name(),
+			Path: filepath.Join(dir, e.Name()),
+			Size: info.Size(),
+		})
+	}
+
+	return files, nil
 }
 
 // loadDotEnv reads a .env file and sets environment variables.

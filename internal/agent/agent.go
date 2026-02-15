@@ -19,6 +19,22 @@ import (
 // maxToolIterations prevents infinite loops in the agent turn.
 const maxToolIterations = 25
 
+// todoPromptSuffix is appended to the system prompt to instruct the agent
+// to use the todo_write tool for task planning. This is injected
+// automatically so it works regardless of what the user has in SOUL.md.
+const todoPromptSuffix = `
+
+## Task Planning (IMPORTANT)
+
+For any multi-step task, you MUST use the todo_write tool to create a visible plan:
+
+1. **Before doing anything else**, call todo_write with a list of concrete, specific steps (status "pending", first one "in_progress").
+2. **As you complete each step**, call todo_write with merge=true to mark it "completed" and the next one "in_progress".
+3. **When finished**, ensure all items are "completed".
+
+Keep items short and descriptive (e.g. "Create user database schema", "Add authentication middleware"). This gives the user real-time visibility into your progress.
+`
+
 // Step represents a single intermediate step during an agent turn.
 type Step struct {
 	Type      string `json:"type"`                 // "thinking", "tool_call", "tool_result"
@@ -48,8 +64,12 @@ type Deps struct {
 // text) or a JSON array of Anthropic content blocks (for multimodal messages).
 func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMessage, agentCfg config.AgentConfig, deps Deps) (*TurnResult, error) {
 	// Set session workspace directory in context so file tools
-	// write to ~/.talon/sessions/{session_id}/.
-	sessionWorkDir := filepath.Join(deps.BaseDir, "sessions", sessionID)
+	// write to the workspace. If already set by caller (e.g. agent tasks
+	// use ~/.talon/agents/), honour that; otherwise default to sessions/.
+	sessionWorkDir := tools.SessionDirFromContext(ctx)
+	if sessionWorkDir == "" {
+		sessionWorkDir = filepath.Join(deps.BaseDir, "sessions", sessionID)
+	}
 	ctx = tools.WithSessionDir(ctx, sessionWorkDir)
 
 	// Lock this session to prevent concurrent writes.
@@ -172,10 +192,12 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 // StreamEvent is a high-level event emitted during a streaming agent turn.
 // The Type field determines which frontend event is fired.
 type StreamEvent struct {
-	Type      string `json:"type"`                 // "thinking_start", "thinking", "text", "tool_call", "tool_result"
+	Type      string `json:"type"`                 // "thinking_start", "thinking", "text", "tool_call", "tool_result", "todo_update"
 	Content   string `json:"content,omitempty"`    // delta text or tool result
 	ToolName  string `json:"tool_name,omitempty"`
 	ToolInput string `json:"tool_input,omitempty"`
+	// TodoItems carries the full todo list snapshot for "todo_update" events.
+	TodoItems []tools.TodoItem `json:"todo_items,omitempty"`
 }
 
 // RunAgentTurnStream is like RunAgentTurn but streams LLM responses in
@@ -185,8 +207,12 @@ type StreamEvent struct {
 // persistence and final rendering.
 func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.RawMessage, agentCfg config.AgentConfig, deps Deps, emit func(StreamEvent)) (*TurnResult, error) {
 	// Set session workspace directory in context so file tools
-	// write to ~/.talon/sessions/{session_id}/.
-	sessionWorkDir := filepath.Join(deps.BaseDir, "sessions", sessionID)
+	// write to the workspace. If already set by caller (e.g. agent tasks
+	// use ~/.talon/agents/), honour that; otherwise default to sessions/.
+	sessionWorkDir := tools.SessionDirFromContext(ctx)
+	if sessionWorkDir == "" {
+		sessionWorkDir = filepath.Join(deps.BaseDir, "sessions", sessionID)
+	}
 	ctx = tools.WithSessionDir(ctx, sessionWorkDir)
 
 	// Lock this session to prevent concurrent writes.
@@ -209,6 +235,17 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 	if memIdx := buildMemoryIndex(deps.BaseDir); memIdx != "" {
 		systemPrompt += memIdx
 	}
+
+	// Inject planning instructions so the agent always uses todo_write.
+	systemPrompt += todoPromptSuffix
+
+	// Wire up todo_write callback so the tool can push updates to the frontend.
+	ctx = tools.WithTodoCallback(ctx, func(items []tools.TodoItem) {
+		emit(StreamEvent{
+			Type:      "todo_update",
+			TodoItems: items,
+		})
+	})
 
 	// Append the user message.
 	userMsg := session.Message{Role: "user", Content: userContent}
@@ -303,6 +340,26 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 				Content:  truncated,
 				ToolName: tb.Name,
 			})
+
+			// Emit file_created events for file-writing tools.
+			if tb.Name == "write_file" || tb.Name == "create_file" {
+				var fileInput struct {
+					Path string `json:"path"`
+				}
+				if json.Unmarshal(tb.Input, &fileInput) == nil && fileInput.Path != "" {
+					// Resolve the full path the same way the tool does.
+					resolvedPath := fileInput.Path
+					if sessionWorkDir != "" && !filepath.IsAbs(resolvedPath) {
+						resolvedPath = filepath.Join(sessionWorkDir, filepath.Clean(resolvedPath))
+					}
+					fileName := filepath.Base(resolvedPath)
+					emit(StreamEvent{
+						Type:     "file_created",
+						Content:  resolvedPath,
+						ToolName: fileName,
+					})
+				}
+			}
 
 			// Build tool_result content block as per Anthropic spec.
 			toolResultContent := []map[string]interface{}{

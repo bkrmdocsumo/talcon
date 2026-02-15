@@ -92,7 +92,7 @@ func RunTelegram(ctx context.Context, cfg *config.Config, deps agent.Deps) {
 
 				userID := update.Message.From.ID
 				chatID := update.Message.Chat.ID
-				sessionID := fmt.Sprintf("tg:%d", userID)
+				sessionID := fmt.Sprintf("tg_%d", userID)
 
 				// Determine the text: regular messages use Text, attachments use Caption.
 				text := update.Message.Text

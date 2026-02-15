@@ -82,4 +82,6 @@ func RegisterStandardTools(r *Registry, baseDir string) {
 
 	runtimesDir := filepath.Join(baseDir, "runtimes")
 	r.Register(NewSandboxTool(runtimesDir))
+
+	r.Register(NewTodoWriteTool())
 }

@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy, afterUpdate, tick } from 'svelte';
-  import { SendMessageStream, SendMessageStreamWithFiles, GetStatus, NewSession, GetSessionID, ListSessions, LoadSession, DeleteSession, ToggleTelegram, CancelStream, ListFlowTranscripts, LoadFlowTranscript, SaveFlowTranscript, DeleteFlowTranscript } from '../wailsjs/go/main/App';
+  import { SendMessageStream, SendMessageStreamWithFiles, SendAgentTaskStream, GetStatus, NewSession, NewAgentSession, GetSessionID, ListSessions, ListAgentSessions, LoadSession, DeleteSession, ToggleTelegram, CancelStream, ListFlowTranscripts, LoadFlowTranscript, SaveFlowTranscript, DeleteFlowTranscript, OpenFileInApp, ListTaskFiles } from '../wailsjs/go/main/App';
   import { EventsOn, EventsOff } from '../wailsjs/runtime/runtime';
 
   import Sidebar from './components/Sidebar.svelte';
@@ -11,6 +11,8 @@
   import ChatInput from './components/ChatInput.svelte';
   import SettingsModal from './components/SettingsModal.svelte';
   import FlowPanel from './components/FlowPanel.svelte';
+  import AgentWelcome from './components/AgentWelcome.svelte';
+  import AgentWorkspace from './components/AgentWorkspace.svelte';
 
   // ─── App state ───
   let messages = [];
@@ -45,6 +47,22 @@
   let flowHistory = [];
   let activeFlowId = null;
   let viewingTranscript = null;
+
+  // ─── Agent task state ───
+  let agentPhase = 'welcome'; // 'welcome' | 'workspace'
+  let agentTaskHistory = [];  // Array of { id, title, timestamp }
+  let activeAgentTaskId = null;
+  let agentTaskTitle = '';
+  let agentMessages = [];     // Array of { role: 'user'|'assistant', content, steps?, isStreaming? }
+  let agentStreamingIdx = -1; // Index of the currently streaming assistant message
+  let agentProgressSteps = []; // Derived progress steps for the info panel
+  let agentCreatedFiles = [];  // Files created during the task
+  let agentContextTools = [];  // Distinct tool names used
+  let agentLoading = false;
+  let agentIsStreaming = false;
+  let agentStreamCleanup = null;
+  let agentCurrentThinkingIdx = -1;
+  let agentWelcomeRef;
 
   // ─── Lifecycle ───
   let statusPollTimer = null;
@@ -414,6 +432,341 @@
   function handleTabChange(e) {
     activeTab = e.detail.tab;
   }
+
+  // ─── Agent Task Handlers ───
+
+  function formatToolNameLabel(name) {
+    return (name || '').replace(/_/g, ' ');
+  }
+
+  function handleAgentStreamEvent(data) {
+    if (!agentIsStreaming || agentStreamingIdx < 0) return;
+
+    const msg = agentMessages[agentStreamingIdx];
+    if (!msg) return;
+
+    switch (data.type) {
+      case 'thinking_start':
+        agentCurrentThinkingIdx = msg.steps.length;
+        msg.steps = [...msg.steps, { type: 'thinking', content: '' }];
+        agentMessages = agentMessages;
+        break;
+
+      case 'thinking':
+        if (agentCurrentThinkingIdx >= 0 && msg.steps[agentCurrentThinkingIdx]) {
+          msg.steps[agentCurrentThinkingIdx].content += data.content;
+          agentMessages = agentMessages;
+        }
+        break;
+
+      case 'text':
+        msg.content += data.content;
+        agentMessages = agentMessages;
+        break;
+
+      case 'tool_call': {
+        agentCurrentThinkingIdx = -1;
+        msg.steps = [...msg.steps, { type: 'tool_call', tool_name: data.tool_name, tool_input: data.tool_input }];
+        agentMessages = agentMessages;
+
+        // Track context tools (deduplicated), skip todo_write as it's a planning meta-tool.
+        if (data.tool_name !== 'todo_write') {
+          const toolLabel = formatToolNameLabel(data.tool_name);
+          if (!agentContextTools.includes(toolLabel)) {
+            agentContextTools = [...agentContextTools, toolLabel];
+          }
+        }
+        break;
+      }
+
+      case 'tool_result':
+        msg.steps = [...msg.steps, { type: 'tool_result', tool_name: data.tool_name, content: data.content }];
+        agentMessages = agentMessages;
+        break;
+
+      case 'todo_update':
+        // Replace the progress steps with the todo items from the agent's plan.
+        if (data.todo_items && Array.isArray(data.todo_items)) {
+          agentProgressSteps = data.todo_items.map(item => ({
+            id: item.id,
+            label: item.content,
+            status: item.status, // 'pending' | 'in_progress' | 'completed'
+          }));
+        }
+        break;
+
+      case 'file_created':
+        if (data.path) {
+          const fName = data.name || data.path.split('/').pop();
+          if (!agentCreatedFiles.find(f => f.path === data.path)) {
+            agentCreatedFiles = [...agentCreatedFiles, { name: fName, path: data.path }];
+          }
+        }
+        break;
+
+      case 'done':
+        agentMessages[agentStreamingIdx] = {
+          role: 'assistant',
+          content: data.final_text || msg.content,
+          steps: data.steps || msg.steps,
+        };
+        agentMessages = agentMessages;
+        // Mark any remaining in_progress steps as completed on finish.
+        if (agentProgressSteps.some(s => s.status === 'in_progress')) {
+          agentProgressSteps = agentProgressSteps.map(s =>
+            s.status === 'in_progress' ? { ...s, status: 'completed' } : s
+          );
+        }
+        finishAgentStream();
+        break;
+
+      case 'error':
+        agentMessages[agentStreamingIdx] = {
+          role: 'assistant',
+          content: msg.content || `Something went wrong: ${data.error}`,
+          steps: msg.steps || [],
+          isError: true,
+        };
+        agentMessages = agentMessages;
+        finishAgentStream();
+        break;
+    }
+  }
+
+  function finishAgentStream() {
+    if (agentStreamCleanup) {
+      agentStreamCleanup();
+      agentStreamCleanup = null;
+    }
+
+    // Clear streaming flag on the assistant message
+    if (agentStreamingIdx >= 0 && agentMessages[agentStreamingIdx]) {
+      agentMessages[agentStreamingIdx].isStreaming = false;
+      agentMessages = agentMessages;
+    }
+
+    agentIsStreaming = false;
+    agentLoading = false;
+    agentCurrentThinkingIdx = -1;
+    agentStreamingIdx = -1;
+
+    // Refresh agent task history in sidebar
+    refreshAgentTaskHistory();
+  }
+
+  function handleAgentWelcomeSend(e) {
+    const { text } = e.detail;
+    handleStartAgentTask({ detail: { text, workingFolder: '' } });
+  }
+
+  async function handleStartAgentTask(e) {
+    const { text, workingFolder } = e.detail;
+    if (!text || agentLoading || !ready) return;
+
+    // Create a new session for this agent task (uses _agent_ prefix to separate from chat)
+    const newId = await NewAgentSession();
+    activeAgentTaskId = newId;
+
+    // Derive title from first ~50 chars of the task
+    let title = text.trim();
+    if (title.length > 50) title = title.substring(0, 50) + '...';
+    agentTaskTitle = title;
+
+    // Reset workspace state
+    agentMessages = [
+      { role: 'user', content: text },
+      { role: 'assistant', content: '', steps: [], isStreaming: true },
+    ];
+    agentStreamingIdx = 1;
+    agentProgressSteps = [];
+    agentCreatedFiles = [];
+    agentContextTools = [];
+    agentLoading = true;
+    agentIsStreaming = true;
+    agentCurrentThinkingIdx = -1;
+
+    // Transition to workspace phase
+    agentPhase = 'workspace';
+
+    // Register stream listener
+    agentStreamCleanup = EventsOn('stream:event', handleAgentStreamEvent);
+
+    try {
+      await SendAgentTaskStream(text);
+    } catch (err) {
+      agentMessages[agentStreamingIdx].content = `Something went wrong: ${err}`;
+      agentMessages = agentMessages;
+      finishAgentStream();
+    }
+  }
+
+  async function handleAgentFollowUp(e) {
+    const { text } = e.detail;
+    if (!text || agentLoading || !ready) return;
+
+    // Append user message and a new empty assistant message
+    agentMessages = [
+      ...agentMessages,
+      { role: 'user', content: text },
+      { role: 'assistant', content: '', steps: [], isStreaming: true },
+    ];
+    agentStreamingIdx = agentMessages.length - 1;
+    agentLoading = true;
+    agentIsStreaming = true;
+    agentCurrentThinkingIdx = -1;
+
+    // Register stream listener
+    agentStreamCleanup = EventsOn('stream:event', handleAgentStreamEvent);
+
+    try {
+      await SendAgentTaskStream(text);
+    } catch (err) {
+      agentMessages[agentStreamingIdx].content = `Something went wrong: ${err}`;
+      agentMessages = agentMessages;
+      finishAgentStream();
+    }
+  }
+
+  async function handleAgentCancel() {
+    try {
+      await CancelStream();
+    } catch (err) {
+      console.error('Agent cancel failed:', err);
+    }
+    finishAgentStream();
+  }
+
+  function handleNewAgentTask() {
+    agentPhase = 'welcome';
+    agentTaskTitle = '';
+    agentMessages = [];
+    agentStreamingIdx = -1;
+    agentProgressSteps = [];
+    agentCreatedFiles = [];
+    agentContextTools = [];
+    agentLoading = false;
+    agentIsStreaming = false;
+    activeAgentTaskId = null;
+  }
+
+  async function handleSelectAgentTask(e) {
+    if (agentLoading) return;
+    const sessionId = e.detail.id;
+    if (sessionId === activeAgentTaskId && agentPhase === 'workspace') return;
+
+    try {
+      const loaded = await LoadSession(sessionId);
+      activeAgentTaskId = sessionId;
+
+      // Rebuild messages array from loaded session
+      agentMessages = (loaded || [])
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({
+          role: m.role,
+          content: m.content || '',
+          steps: (m.steps || []).map(s => ({
+            type: s.type,
+            content: s.content,
+            tool_name: s.tool_name,
+            tool_input: s.tool_input,
+          })),
+        }));
+
+      // Derive title from first user message
+      const firstUser = agentMessages.find(m => m.role === 'user');
+      let title = (firstUser?.content || '').trim();
+      if (title.length > 50) title = title.substring(0, 50) + '...';
+      agentTaskTitle = title;
+
+      // Rebuild progress from todo_write tool calls (use the last one's input as the plan).
+      const allSteps = agentMessages.flatMap(m => m.steps || []);
+      const todoSteps = allSteps.filter(s => s.type === 'tool_call' && s.tool_name === 'todo_write');
+      if (todoSteps.length > 0) {
+        // Use the last todo_write call's input to reconstruct the plan.
+        try {
+          const lastTodo = JSON.parse(todoSteps[todoSteps.length - 1].tool_input);
+          if (lastTodo.todos && Array.isArray(lastTodo.todos)) {
+            agentProgressSteps = lastTodo.todos.map(item => ({
+              id: item.id,
+              label: item.content,
+              status: item.status || 'completed',
+            }));
+          }
+        } catch (_) {
+          agentProgressSteps = [];
+        }
+      } else {
+        agentProgressSteps = [];
+      }
+      agentContextTools = [...new Set(
+        allSteps.filter(s => s.type === 'tool_call' && s.tool_name !== 'todo_write').map(s => formatToolNameLabel(s.tool_name))
+      )];
+      agentCreatedFiles = [];
+
+      // Try loading files from the backend
+      try {
+        const taskFiles = await ListTaskFiles(sessionId);
+        if (taskFiles && taskFiles.length > 0) {
+          agentCreatedFiles = taskFiles.map(f => ({ name: f.name, path: f.path }));
+        }
+      } catch (_) {}
+
+      agentStreamingIdx = -1;
+      agentPhase = 'workspace';
+      agentLoading = false;
+      agentIsStreaming = false;
+    } catch (e) {
+      console.error('Failed to load agent task:', e);
+    }
+  }
+
+  async function handleDeleteAgentTask(e) {
+    const sessionId = e.detail.id;
+    try {
+      await DeleteSession(sessionId);
+      if (sessionId === activeAgentTaskId) {
+        handleNewAgentTask();
+      }
+      await refreshAgentTaskHistory();
+    } catch (e) {
+      console.error('Failed to delete agent task:', e);
+    }
+  }
+
+  async function refreshAgentTaskHistory() {
+    try {
+      const sessions = await ListAgentSessions();
+      agentTaskHistory = (sessions || []).map(s => ({
+        id: s.id,
+        title: s.title || 'Untitled task',
+        timestamp: s.timestamp,
+      }));
+    } catch (e) {
+      console.error('Failed to load agent task history:', e);
+    }
+  }
+
+  async function handleOpenFile(e) {
+    const { path } = e.detail;
+    if (!path) return;
+    try {
+      await OpenFileInApp(path);
+    } catch (err) {
+      console.error('Failed to open file:', err);
+    }
+  }
+
+  async function handleOpenFolder() {
+    // Open the working directory for the current agent task
+    if (activeAgentTaskId) {
+      try {
+        const baseDir = '~/.talon/agents/' + activeAgentTaskId;
+        await OpenFileInApp(baseDir);
+      } catch (err) {
+        console.error('Failed to open folder:', err);
+      }
+    }
+  }
 </script>
 
 <div class="app">
@@ -423,12 +776,17 @@
     {activeTab}
     {flowHistory}
     {activeFlowId}
+    {agentTaskHistory}
+    {activeAgentTaskId}
     on:newChat={handleNewSession}
     on:selectChat={handleSelectChat}
     on:deleteChat={handleDeleteChat}
     on:newFlow={handleNewFlow}
     on:selectFlow={handleSelectFlow}
     on:deleteFlow={handleDeleteFlow}
+    on:newAgentTask={handleNewAgentTask}
+    on:selectAgentTask={handleSelectAgentTask}
+    on:deleteAgentTask={handleDeleteAgentTask}
     on:openSettings={() => (showSettings = true)}
   />
 
@@ -448,6 +806,38 @@
         on:save={handleSaveFlow}
         on:clearView={handleClearFlowView}
       />
+    {:else if activeTab === 'agents'}
+      {#if agentPhase === 'welcome'}
+        <main class="chat-area">
+          <div class="chat-container">
+            <AgentWelcome {agentName} />
+          </div>
+        </main>
+
+        <ChatInput
+          bind:this={agentWelcomeRef}
+          disabled={agentLoading || !ready}
+          loading={agentLoading}
+          {agentName}
+          on:send={handleAgentWelcomeSend}
+          on:cancel={handleAgentCancel}
+        />
+      {:else}
+        <AgentWorkspace
+          taskTitle={agentTaskTitle}
+          messages={agentMessages}
+          isStreaming={agentIsStreaming}
+          loading={agentLoading}
+          {agentName}
+          progressSteps={agentProgressSteps}
+          createdFiles={agentCreatedFiles}
+          contextTools={agentContextTools}
+          on:openFile={handleOpenFile}
+          on:openFolder={handleOpenFolder}
+          on:sendFollowUp={handleAgentFollowUp}
+          on:cancel={handleAgentCancel}
+        />
+      {/if}
     {:else}
       <main class="chat-area" bind:this={chatContainer}>
         <div class="chat-container">

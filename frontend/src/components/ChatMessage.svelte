@@ -1,6 +1,7 @@
 <script>
   import { renderMarkdown } from '../lib/markdown.js';
   import TypingIndicator from './TypingIndicator.svelte';
+  import appIcon from '../assets/appicon.png';
 
   export let message = null;   // { role, content, isError?, files?, steps? }
   export let agentName = 'Talon';
@@ -49,7 +50,9 @@
     {#if !isTyping && message.role === 'user'}
       <div class="avatar avatar-user">U</div>
     {:else}
-      <div class="avatar avatar-assistant">T</div>
+      <div class="avatar avatar-assistant">
+        <img src={appIcon} alt="Talon" class="avatar-icon" />
+      </div>
     {/if}
   </div>
   <div class="message-body">
@@ -180,14 +183,23 @@
   }
 
   .avatar-user {
-    background: var(--accent);
-    color: white;
+    background: #0ef0d8;
+    color: #000;
   }
 
   .avatar-assistant {
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     border: 1px solid var(--border);
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .avatar-icon {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 
   .message-body {

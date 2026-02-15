@@ -16,7 +16,7 @@ import (
 // and sends it to the agent loop.
 func RunCLI(ctx context.Context, agentCfg config.AgentConfig, deps agent.Deps) error {
 	scanner := bufio.NewScanner(os.Stdin)
-	sessionID := agentCfg.SessionPrefix + ":cli"
+	sessionID := agentCfg.SessionPrefix + "_cli"
 
 	fmt.Printf("Talon (%s) — type your message, or 'exit' to quit.\n", agentCfg.Name)
 	fmt.Println(strings.Repeat("─", 50))

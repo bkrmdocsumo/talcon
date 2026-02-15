@@ -6,6 +6,8 @@
   export let activeTab = 'chat'; // 'chat' | 'agents' | 'flow'
   export let flowHistory = []; // Array of { id, title, duration, wordCount, timestamp }
   export let activeFlowId = null;
+  export let agentTaskHistory = []; // Array of { id, title, timestamp }
+  export let activeAgentTaskId = null;
 
   const dispatch = createEventDispatcher();
 
@@ -54,6 +56,22 @@
     dispatch('deleteFlow', { id: flowId });
   }
 
+  // ─── Agent task handlers ───
+  let hoveredAgentTaskId = null;
+
+  function handleNewAgentTask() {
+    dispatch('newAgentTask');
+  }
+
+  function handleSelectAgentTask(taskId) {
+    dispatch('selectAgentTask', { id: taskId });
+  }
+
+  function handleDeleteAgentTask(e, taskId) {
+    e.stopPropagation();
+    dispatch('deleteAgentTask', { id: taskId });
+  }
+
   // ─── Time formatting ───
   function formatTimestamp(ts) {
     if (!ts) return '';
@@ -75,9 +93,15 @@
     return m > 0 ? `${m}m ${s.toString().padStart(2, '0')}s` : `${s}s`;
   }
 
+  // ─── Agent task filtering ───
+  $: filteredAgentTasks = searchQuery
+    ? agentTaskHistory.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    : agentTaskHistory;
+
   // Group items by time period.
   $: groupedChats = groupByTime(filteredHistory);
   $: groupedFlows = groupByTime(filteredFlowHistory);
+  $: groupedAgentTasks = groupByTime(filteredAgentTasks);
 
   function groupByTime(items) {
     const groups = [];
@@ -160,32 +184,63 @@
 
     <!-- ─── Agents Tab Nav ─── -->
     {:else if activeTab === 'agents'}
-      <div class="section-header">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="8" r="5"/>
-          <path d="M20 21a8 8 0 0 0-16 0"/>
+      <button class="nav-item nav-new-chat" on:click={handleNewAgentTask}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M12 5v14M5 12h14" />
         </svg>
-        <span>Agents</span>
+        <span>New task</span>
+      </button>
+
+      <div class="search-wrapper">
+        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.35-4.35" />
+        </svg>
+        <input
+          class="search-input"
+          type="text"
+          placeholder="Search tasks"
+          bind:value={searchQuery}
+        />
       </div>
 
       <div class="nav-divider"></div>
 
       <div class="chat-history">
-        <div class="history-group">
-          <button class="history-item active">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-right: 8px;">
-              <circle cx="12" cy="8" r="5"/>
-              <path d="M20 21a8 8 0 0 0-16 0"/>
-              <path d="M12 2v1"/>
-              <path d="M4.93 4.93l.7.7"/>
-              <path d="M19.07 4.93l-.7.7"/>
-            </svg>
-            <span class="history-title">Talon (Main)</span>
-          </button>
-        </div>
-        <p class="empty-history" style="margin-top: 8px;">
-          More agents coming soon
-        </p>
+        {#if filteredAgentTasks.length === 0}
+          <p class="empty-history">
+            {searchQuery ? 'No matching tasks' : 'Your tasks will show up here'}
+          </p>
+        {:else}
+          {#each groupedAgentTasks as group}
+            <div class="history-group">
+              <div class="history-group-label">{group.label}</div>
+              {#each group.items as task (task.id)}
+                <button
+                  class="history-item"
+                  class:active={task.id === activeAgentTaskId}
+                  on:click={() => handleSelectAgentTask(task.id)}
+                  on:mouseenter={() => (hoveredAgentTaskId = task.id)}
+                  on:mouseleave={() => (hoveredAgentTaskId = null)}
+                  title={task.title}
+                >
+                  <span class="history-title">{task.title}</span>
+                  {#if hoveredAgentTaskId === task.id}
+                    <button
+                      class="delete-btn"
+                      on:click={(e) => handleDeleteAgentTask(e, task.id)}
+                      title="Delete task"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                      </svg>
+                    </button>
+                  {/if}
+                </button>
+              {/each}
+            </div>
+          {/each}
+        {/if}
       </div>
 
     <!-- ─── Flow Tab Nav ─── -->
