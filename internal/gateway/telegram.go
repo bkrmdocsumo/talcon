@@ -17,8 +17,15 @@ import (
 	"github.com/user/talon/internal/util"
 )
 
+// TelegramNotify is a callback invoked when a Telegram message is received or
+// a reply is sent. The frontend uses these notifications to refresh the
+// Telegram chat list in real time.
+type TelegramNotify func(sessionID string, userText string, replyText string)
+
 // RunTelegram starts the Telegram bot long-poller. It blocks until ctx is cancelled.
-func RunTelegram(ctx context.Context, cfg *config.Config, deps agent.Deps) {
+// If notify is non-nil it is called when a message is received (replyText=="")
+// and when a reply is sent (userText=="").
+func RunTelegram(ctx context.Context, cfg *config.Config, deps agent.Deps, notify TelegramNotify) {
 	bot, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
 	if err != nil {
 		log.Printf("[telegram] failed to init bot: %v", err)
@@ -114,33 +121,43 @@ func RunTelegram(ctx context.Context, cfg *config.Config, deps agent.Deps) {
 					continue
 				}
 
-				// Handle in a goroutine so we don't block polling.
-				go func() {
-					result, err := agent.RunAgentTurn(ctx, sessionID, content, agentCfg, deps)
-					var response string
-					if err != nil {
-						log.Printf("[telegram] error for %d: %v", userID, err)
-						response = fmt.Sprintf("Sorry, an error occurred: %v", err)
+			// Notify frontend that a new Telegram message was received.
+			if notify != nil {
+				notify(sessionID, text, "")
+			}
+
+			// Handle in a goroutine so we don't block polling.
+			go func() {
+				result, err := agent.RunAgentTurn(ctx, sessionID, content, agentCfg, deps)
+				var response string
+				if err != nil {
+					log.Printf("[telegram] error for %d: %v", userID, err)
+					response = fmt.Sprintf("Sorry, an error occurred: %v", err)
+				} else {
+					response = result.FinalText
+				}
+
+				// Telegram has a 4096 char limit per message.
+				for len(response) > 0 {
+					chunk := response
+					if len(chunk) > 4000 {
+						chunk = response[:4000]
+						response = response[4000:]
 					} else {
-						response = result.FinalText
+						response = ""
 					}
 
-					// Telegram has a 4096 char limit per message.
-					for len(response) > 0 {
-						chunk := response
-						if len(chunk) > 4000 {
-							chunk = response[:4000]
-							response = response[4000:]
-						} else {
-							response = ""
-						}
-
-						msg := tgbotapi.NewMessage(chatID, chunk)
-						if _, err := bot.Send(msg); err != nil {
-							log.Printf("[telegram] send error for %d: %v", userID, err)
-						}
+					msg := tgbotapi.NewMessage(chatID, chunk)
+					if _, err := bot.Send(msg); err != nil {
+						log.Printf("[telegram] send error for %d: %v", userID, err)
 					}
-				}()
+				}
+
+				// Notify frontend that a reply was sent.
+				if notify != nil {
+					notify(sessionID, "", result.FinalText)
+				}
+			}()
 			}
 		}
 	}

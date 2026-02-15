@@ -54,12 +54,6 @@
     dispatch('openFile', { path: file.path, name: file.name });
   }
 
-  function handleCopy() {
-    if (file.path) {
-      navigator.clipboard?.writeText(file.path);
-    }
-  }
-
   $: ext = fileExtension(file?.name || '');
   $: badge = fileTypeBadge(file?.name || '');
   $: icon = iconType(file?.name || '');
@@ -108,12 +102,6 @@
     </div>
 
     <div class="file-actions">
-      <button class="file-action-btn" on:click={handleCopy} title="Copy path">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-        </svg>
-      </button>
       <button class="file-action-btn btn-open" on:click={handleOpen} title="Open file">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>

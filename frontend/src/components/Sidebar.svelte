@@ -8,6 +8,9 @@
   export let activeFlowId = null;
   export let agentTaskHistory = []; // Array of { id, title, timestamp }
   export let activeAgentTaskId = null;
+  export let telegramChats = []; // Array of { id, title, timestamp }
+  export let activeTelegramChatId = null;
+  export let telegramStatus = 'stopped';
 
   const dispatch = createEventDispatcher();
 
@@ -56,6 +59,18 @@
     dispatch('deleteFlow', { id: flowId });
   }
 
+  // ─── Telegram chat handlers ───
+  let hoveredTelegramChatId = null;
+
+  function handleSelectTelegramChat(chatId) {
+    dispatch('selectTelegramChat', { id: chatId });
+  }
+
+  function handleDeleteTelegramChat(e, chatId) {
+    e.stopPropagation();
+    dispatch('deleteTelegramChat', { id: chatId });
+  }
+
   // ─── Agent task handlers ───
   let hoveredAgentTaskId = null;
 
@@ -98,10 +113,16 @@
     ? agentTaskHistory.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()))
     : agentTaskHistory;
 
+  // ─── Telegram filtering ───
+  $: filteredTelegramChats = searchQuery
+    ? telegramChats.filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    : telegramChats;
+
   // Group items by time period.
   $: groupedChats = groupByTime(filteredHistory);
   $: groupedFlows = groupByTime(filteredFlowHistory);
   $: groupedAgentTasks = groupByTime(filteredAgentTasks);
+  $: groupedTelegramChats = groupByTime(filteredTelegramChats);
 
   function groupByTime(items) {
     const groups = [];
@@ -180,6 +201,59 @@
           {/each}
         {/if}
       </div>
+
+      <!-- ─── Telegram Chats Section ─── -->
+      {#if telegramStatus === 'running' || filteredTelegramChats.length > 0}
+        <div class="nav-divider"></div>
+        <div class="section-header">
+          <svg class="section-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.198 2.433a2.242 2.242 0 0 0-1.022.215l-16.5 7.5a2.25 2.25 0 0 0 .126 4.073l6.198 2.066 2.066 6.198a2.25 2.25 0 0 0 4.073.126l7.5-16.5a2.252 2.252 0 0 0-2.441-3.678z"/>
+          </svg>
+          <span>Telegram</span>
+          {#if telegramStatus === 'running'}
+            <span class="status-dot running"></span>
+          {/if}
+        </div>
+
+        <div class="chat-history telegram-history">
+          {#if filteredTelegramChats.length === 0}
+            <p class="empty-history">
+              {searchQuery ? 'No matching Telegram chats' : 'Telegram chats will appear here'}
+            </p>
+          {:else}
+            {#each groupedTelegramChats as group}
+              <div class="history-group">
+                <div class="history-group-label">{group.label}</div>
+                {#each group.items as chat (chat.id)}
+                  <button
+                    class="history-item telegram-item"
+                    class:active={chat.id === activeTelegramChatId}
+                    on:click={() => handleSelectTelegramChat(chat.id)}
+                    on:mouseenter={() => (hoveredTelegramChatId = chat.id)}
+                    on:mouseleave={() => (hoveredTelegramChatId = null)}
+                    title={chat.title}
+                  >
+                    <svg class="telegram-chat-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21.198 2.433a2.242 2.242 0 0 0-1.022.215l-16.5 7.5a2.25 2.25 0 0 0 .126 4.073l6.198 2.066 2.066 6.198a2.25 2.25 0 0 0 4.073.126l7.5-16.5a2.252 2.252 0 0 0-2.441-3.678z"/>
+                    </svg>
+                    <span class="history-title">{chat.title}</span>
+                    <button
+                      class="delete-btn"
+                      class:visible={hoveredTelegramChatId === chat.id}
+                      on:click={(e) => handleDeleteTelegramChat(e, chat.id)}
+                      title="Delete chat"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                      </svg>
+                    </button>
+                  </button>
+                {/each}
+              </div>
+            {/each}
+          {/if}
+        </div>
+      {/if}
 
     <!-- ─── Agents Tab Nav ─── -->
     {:else if activeTab === 'agents'}
@@ -555,6 +629,59 @@
   .delete-btn:hover {
     background: rgba(255, 255, 255, 0.1);
     color: #ef4444;
+  }
+
+  /* ─── Telegram Section ─── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .section-icon {
+    flex-shrink: 0;
+    color: var(--text-muted);
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-left: 2px;
+  }
+
+  .status-dot.running {
+    background: #22c55e;
+    box-shadow: 0 0 4px rgba(34, 197, 94, 0.5);
+  }
+
+  .telegram-history {
+    flex: none;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .telegram-item {
+    gap: 6px;
+  }
+
+  .telegram-chat-icon {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+
+  .telegram-item.active .telegram-chat-icon,
+  .telegram-item:hover .telegram-chat-icon {
+    opacity: 1;
+    color: #29b6f6;
   }
 
   /* ─── Sidebar Footer ─── */

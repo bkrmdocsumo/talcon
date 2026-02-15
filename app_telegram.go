@@ -8,6 +8,7 @@ import (
 
 	"github.com/user/talon/internal/config"
 	"github.com/user/talon/internal/gateway"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // startTelegram launches the Telegram bot in a background goroutine.
@@ -27,9 +28,19 @@ func (a *App) startTelegram(cfg *config.Config) {
 	a.tgCancel = cancel
 	a.tgStatus = "running"
 
+	// Notifier emits Wails events so the frontend can update the Telegram
+	// chat list in real time when messages arrive or replies are sent.
+	notify := func(sessionID string, userText string, replyText string) {
+		wailsRuntime.EventsEmit(a.ctx, "telegram:activity", map[string]interface{}{
+			"session_id": sessionID,
+			"user_text":  userText,
+			"reply_text": replyText,
+		})
+	}
+
 	go func() {
 		log.Println("[telegram] starting bot from GUI...")
-		gateway.RunTelegram(tgCtx, cfg, a.deps)
+		gateway.RunTelegram(tgCtx, cfg, a.deps, notify)
 		// If RunTelegram returns, the bot has stopped.
 		a.tgMu.Lock()
 		if a.tgStatus == "running" {

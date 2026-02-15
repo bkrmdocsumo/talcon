@@ -11,6 +11,9 @@ import {
   CancelStream,
   ChangeModel,
   ToggleTelegram,
+  ListChatFiles,
+  ListTelegramSessions,
+  LoadTelegramSession,
 } from '../../../wailsjs/go/main/App';
 import { EventsOn } from '../../../wailsjs/runtime/runtime';
 
@@ -38,6 +41,15 @@ export const showSettings = writable(false);
 export const chatHistory = writable([]);
 export const activeChatId = writable(null);
 export const isFirstMessage = writable(true);
+
+// Files produced during the chat session
+export const chatCreatedFiles = writable([]);
+
+// Telegram chat state
+export const telegramChats = writable([]);
+export const activeTelegramChatId = writable(null);
+export const telegramMessages = writable([]);
+export const viewingTelegram = writable(false);
 
 // Internal — stream cleanup function reference
 let _streamCleanup = null;
@@ -134,6 +146,16 @@ export function handleStreamEvent(data) {
       case 'tool_result':
         msg.steps = [...(msg.steps || []), { type: 'tool_result', tool_name: data.tool_name, content: data.content }];
         break;
+
+      case 'file_created':
+        if (data.path) {
+          const fName = data.name || data.path.split('/').pop();
+          chatCreatedFiles.update(files => {
+            if (files.find(f => f.path === data.path)) return files;
+            return [...files, { name: fName, path: data.path }];
+          });
+        }
+        return msgs;
 
       case 'done':
         msg.role = 'assistant';
@@ -248,6 +270,7 @@ export async function newSession() {
   const newId = await NewSession();
   activeChatId.set(newId);
   messages.set([]);
+  chatCreatedFiles.set([]);
   isFirstMessage.set(true);
 }
 
@@ -266,6 +289,15 @@ export async function selectChat(sessionId) {
         steps: m.steps || [],
       }))
     );
+
+    // Load any files produced during this chat session.
+    chatCreatedFiles.set([]);
+    try {
+      const sessionFiles = await ListChatFiles(sessionId);
+      if (sessionFiles && sessionFiles.length > 0) {
+        chatCreatedFiles.set(sessionFiles.map(f => ({ name: f.name, path: f.path })));
+      }
+    } catch (_) {}
   } catch (e) {
     console.error('Failed to load session:', e);
   }
@@ -293,6 +325,61 @@ export async function toggleTelegram() {
     console.error('Telegram toggle failed:', e);
   } finally {
     telegramToggling.set(false);
+  }
+}
+
+// ─── Telegram chat methods ───
+
+export async function refreshTelegramChats() {
+  try {
+    const sessions = await ListTelegramSessions();
+    telegramChats.set(
+      (sessions || []).map(s => ({
+        id: s.id,
+        title: s.title || 'Telegram chat',
+        timestamp: s.timestamp,
+      }))
+    );
+  } catch (e) {
+    console.error('Failed to load telegram chats:', e);
+  }
+}
+
+export async function selectTelegramChat(sessionId) {
+  if (get(loading)) return;
+  if (sessionId === get(activeTelegramChatId) && get(telegramMessages).length > 0) return;
+
+  try {
+    const loaded = await LoadTelegramSession(sessionId);
+    activeTelegramChatId.set(sessionId);
+    viewingTelegram.set(true);
+    telegramMessages.set(
+      (loaded || []).map(m => ({
+        role: m.role,
+        content: m.content,
+        steps: m.steps || [],
+      }))
+    );
+  } catch (e) {
+    console.error('Failed to load telegram session:', e);
+  }
+}
+
+export function closeTelegramView() {
+  viewingTelegram.set(false);
+  activeTelegramChatId.set(null);
+  telegramMessages.set([]);
+}
+
+export async function deleteTelegramChat(sessionId) {
+  try {
+    await DeleteSession(sessionId);
+    if (sessionId === get(activeTelegramChatId)) {
+      closeTelegramView();
+    }
+    await refreshTelegramChats();
+  } catch (e) {
+    console.error('Failed to delete telegram session:', e);
   }
 }
 

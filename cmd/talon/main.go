@@ -121,7 +121,7 @@ func main() {
 
 		// Start Telegram if configured.
 		if cfg.TelegramToken != "" {
-			go gateway.RunTelegram(ctx, cfg, deps)
+			go gateway.RunTelegram(ctx, cfg, deps, nil)
 		}
 
 		log.Printf("Server running on :%d (Ctrl+C to stop)", cfg.Port)

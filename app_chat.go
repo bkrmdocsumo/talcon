@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/user/talon/internal/agent"
+	"github.com/user/talon/internal/config"
 	"github.com/user/talon/internal/session"
 	"github.com/user/talon/internal/tools"
 	"github.com/user/talon/internal/util"
@@ -329,12 +332,100 @@ func (a *App) LoadSession(sessionID string) ([]HistoryMessage, error) {
 	return result, nil
 }
 
+// ListTelegramSessions returns metadata for all Telegram chat sessions, sorted newest first.
+func (a *App) ListTelegramSessions() ([]session.SessionInfo, error) {
+	if a.deps.SessionMgr == nil {
+		return []session.SessionInfo{}, nil
+	}
+	return a.deps.SessionMgr.ListTelegramSessions()
+}
+
+// LoadTelegramSession loads a Telegram session's messages for read-only viewing
+// in the frontend. Unlike LoadSession, it does NOT switch the active session.
+func (a *App) LoadTelegramSession(sessionID string) ([]HistoryMessage, error) {
+	if !a.ready {
+		return nil, fmt.Errorf("%s", a.initError)
+	}
+
+	msgs, err := a.deps.SessionMgr.Load(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("load telegram session: %w", err)
+	}
+
+	var result []HistoryMessage
+	for _, msg := range msgs {
+		parsed := parseMessageForFrontend(msg)
+		if parsed == nil {
+			continue
+		}
+
+		// Merge consecutive assistant messages.
+		if parsed.Role == "assistant" && len(result) > 0 && result[len(result)-1].Role == "assistant" {
+			prev := &result[len(result)-1]
+			prev.Steps = append(prev.Steps, parsed.Steps...)
+			if parsed.Content != "" {
+				if prev.Content != "" {
+					prev.Content += parsed.Content
+				} else {
+					prev.Content = parsed.Content
+				}
+			}
+		} else {
+			result = append(result, *parsed)
+		}
+	}
+
+	return result, nil
+}
+
 // DeleteSession removes a saved session.
 func (a *App) DeleteSession(sessionID string) error {
 	if a.deps.SessionMgr == nil {
 		return fmt.Errorf("app not ready")
 	}
 	return a.deps.SessionMgr.DeleteSession(sessionID)
+}
+
+// ListChatFiles returns a list of files produced in a chat session's workspace.
+// Chat session files live under ~/.talon/sessions/{sessionID}/.
+func (a *App) ListChatFiles(sessionID string) ([]TaskFileInfo, error) {
+	baseDir, err := config.TalonDir()
+	if err != nil {
+		return []TaskFileInfo{}, nil
+	}
+
+	dir := filepath.Join(baseDir, "sessions", sessionID)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []TaskFileInfo{}, nil
+		}
+		return nil, fmt.Errorf("read session dir: %w", err)
+	}
+
+	var files []TaskFileInfo
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		// Skip session metadata files (JSONL session logs, dotfiles).
+		if strings.HasSuffix(e.Name(), ".jsonl") || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+
+		files = append(files, TaskFileInfo{
+			Name: e.Name(),
+			Path: filepath.Join(dir, e.Name()),
+			Size: info.Size(),
+		})
+	}
+
+	return files, nil
 }
 
 // parseMessageForFrontend converts a stored session message to a simplified

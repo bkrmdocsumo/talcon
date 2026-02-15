@@ -24,9 +24,9 @@ const maxToolIterations = 25
 // ensure generated code is always saved as files in the workspace directory.
 const agentCodeFileSuffix = `
 
-## Code Output Rules (IMPORTANT — Agent Tasks)
+## Code Output Rules (IMPORTANT)
 
-When working on an agent task, you MUST always save any code you produce as files using the write_file tool. NEVER just display code in your response without also writing it to a file.
+You MUST always save any code you produce as files using the write_file tool. NEVER just display code in your response without also writing it to a file.
 
 - **Every code snippet** (scripts, configs, HTML, CSS, JSON, YAML, etc.) MUST be saved as a file with an appropriate name and extension.
 - If the user asks you to write a program, build something, or generate any code, create the file(s) first using write_file, then explain what you created.
@@ -108,6 +108,9 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 	if memIdx := buildMemoryIndex(deps.BaseDir); memIdx != "" {
 		systemPrompt += memIdx
 	}
+
+	// Always inject instructions to save code as files.
+	systemPrompt += agentCodeFileSuffix
 
 	// Append the user message.
 	userMsg := session.Message{Role: "user", Content: userContent}
@@ -232,7 +235,6 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 	// write to the workspace. If already set by caller (e.g. agent tasks
 	// use ~/.talon/agents/), honour that; otherwise default to sessions/.
 	sessionWorkDir := tools.SessionDirFromContext(ctx)
-	isAgentTask := sessionWorkDir != "" // caller pre-set a workspace → agent task
 	if sessionWorkDir == "" {
 		sessionWorkDir = filepath.Join(deps.BaseDir, "sessions", sessionID)
 	}
@@ -262,10 +264,8 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 	// Inject planning instructions so the agent always uses todo_write.
 	systemPrompt += todoPromptSuffix
 
-	// For agent tasks, inject instructions to always save code as files.
-	if isAgentTask {
-		systemPrompt += agentCodeFileSuffix
-	}
+	// Always inject instructions to save code as files.
+	systemPrompt += agentCodeFileSuffix
 
 	// Wire up todo_write callback so the tool can push updates to the frontend.
 	ctx = tools.WithTodoCallback(ctx, func(items []tools.TodoItem) {
@@ -370,7 +370,7 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 			})
 
 			// Emit file_created events for file-writing tools.
-			if tb.Name == "write_file" || tb.Name == "create_file" {
+			if tb.Name == "write_file" {
 				var fileInput struct {
 					Path string `json:"path"`
 				}

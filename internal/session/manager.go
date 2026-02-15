@@ -235,6 +235,59 @@ func (m *Manager) ListGUISessions() ([]SessionInfo, error) {
 	return sessions, nil
 }
 
+// ListTelegramSessions scans the sessions directory for Telegram sessions
+// (those with "tg_" prefix) and returns metadata sorted by timestamp (newest first).
+func (m *Manager) ListTelegramSessions() ([]SessionInfo, error) {
+	dir := m.sessionsDir()
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return []SessionInfo{}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read sessions dir: %w", err)
+	}
+
+	var sessions []SessionInfo
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		sessionID := strings.TrimSuffix(e.Name(), ".jsonl")
+		if !strings.HasPrefix(sessionID, "tg_") {
+			continue
+		}
+
+		// Use file modification time as timestamp for Telegram sessions.
+		info, err := e.Info()
+		var ts int64
+		if err == nil {
+			ts = info.ModTime().UnixMilli()
+		}
+
+		// Extract title from first user message.
+		title := extractTitle(filepath.Join(dir, e.Name()))
+
+		// Use the Telegram user ID as a subtitle hint.
+		userID := strings.TrimPrefix(sessionID, "tg_")
+		if title == "Untitled chat" {
+			title = "Telegram user " + userID
+		}
+
+		sessions = append(sessions, SessionInfo{
+			ID:        sessionID,
+			Title:     title,
+			Timestamp: ts,
+		})
+	}
+
+	// Sort by timestamp descending (newest first).
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].Timestamp > sessions[j].Timestamp
+	})
+
+	return sessions, nil
+}
+
 // ListAgentSessions scans the sessions directory for agent task sessions
 // (those with "_agent_" in the ID) and returns metadata sorted by timestamp
 // (newest first).
