@@ -32,6 +32,7 @@ The agent can autonomously use tools to accomplish tasks:
 - **File read/write** — Session-scoped file access with workspace isolation
 - **Web browsing** — Full Chromium automation (navigate, click, type, scroll) via semantic DOM snapshots
 - **Persistent memory** — Save, search, list, and delete long-term knowledge as Markdown files
+- **PDF operations** — Read, create, merge, split PDFs and inspect metadata
 - **Code execution** — Run JavaScript, Python, or Go in a sandboxed WASM environment (no network, no filesystem, 30s timeout)
 - **Task planning** — Structured todo lists with real-time progress updates in the UI
 
@@ -245,9 +246,21 @@ talon/
 │   └── src/
 │       ├── App.svelte
 │       ├── components/
+│       │   ├── ChatMessage.svelte     # Message bubble with Markdown, tools, thinking
+│       │   ├── ChatInput.svelte       # Chat composer with send/stop controls
+│       │   ├── Sidebar.svelte         # Session list, Telegram chats, navigation
+│       │   ├── Header.svelte          # Top bar with model selector and controls
+│       │   ├── SettingsModal.svelte   # API keys, preferences, integrations
+│       │   ├── AgentWorkspace.svelte  # Agent task chat and file workspace
+│       │   ├── AgentInfoPanel.svelte  # Todo progress, files, and context panel
+│       │   ├── AgentFileCard.svelte   # File card in agent workspace sidebar
+│       │   ├── AgentWelcome.svelte    # Agent mode onboarding screen
+│       │   ├── FlowPanel.svelte       # Voice transcription history
 │       │   ├── SnippetsPanel.svelte   # Snippet management UI
+│       │   ├── WelcomeScreen.svelte   # Chat welcome with greeting
+│       │   ├── ErrorBanner.svelte     # Setup-required / API key warnings
 │       │   ├── LoadingSpinner.svelte  # Shared loading indicator
-│       │   └── ...                    # Chat, Agent, Flow, Settings, etc.
+│       │   └── TypingIndicator.svelte # Animated typing dots
 │       └── lib/
 │           ├── stores/
 │           │   ├── chatStore.js       # Chat, streaming, Telegram chat list
@@ -367,6 +380,7 @@ Requires microphone and accessibility permissions on macOS.
 | LLM | [Anthropic Claude](https://anthropic.com/) · [OpenAI GPT](https://openai.com/) · [Google Gemini](https://ai.google.dev/) |
 | Browser automation | [chromedp](https://github.com/chromedp/chromedp) |
 | Code sandbox | [wazero](https://wazero.io/) (WASM) |
+| PDF | [pdfcpu](https://github.com/pdfcpu/pdfcpu) · [go-pdf/fpdf](https://github.com/go-pdf/fpdf) · [ledongthuc/pdf](https://github.com/ledongthuc/pdf) |
 | Telegram | [telegram-bot-api](https://github.com/go-telegram-bot-api/telegram-bot-api) |
 | Scheduling | [robfig/cron](https://github.com/robfig/cron) |
 | Speech | OpenAI Whisper / Deepgram + macOS AVFoundation |
