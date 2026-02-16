@@ -90,6 +90,9 @@ export function formatToolLabel(name, inputJson) {
       case 'todo_write':
         detail = 'update plan';
         break;
+      case 'use_skill':
+        detail = input.name || '';
+        break;
       case 'read_pdf':
         detail = shortPath(input.path);
         break;

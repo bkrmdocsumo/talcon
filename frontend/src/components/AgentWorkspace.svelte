@@ -17,6 +17,7 @@
   export let progressSteps = [];     // Array of { label, status }
   export let createdFiles = [];      // Array of { name, path, type?, size? }
   export let contextTools = [];      // Array of tool name strings
+  export let skillsUsed = [];        // Array of skill name strings loaded via use_skill
 
   // Derive the original prompt from the first user message
   $: prompt = (messages.find(m => m.role === 'user')?.content || '').trim();
@@ -301,12 +302,19 @@
                       {step.content}
                     </div>
                   {:else if step.type === 'tool_call'}
-                    <button class="step-toggle step-tool" on:click={() => toggleStep(msgIdx, i)}>
+                    <button class="step-toggle step-tool" class:step-skill={step.tool_name === 'use_skill'} on:click={() => toggleStep(msgIdx, i)}>
                       <span class="step-icon">{expandedSteps[`${msgIdx}-${i}`] ? '▼' : '▶'}</span>
                       <span class="step-tool-icon">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-                        </svg>
+                        {#if step.tool_name === 'use_skill'}
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                          </svg>
+                        {:else}
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                          </svg>
+                        {/if}
                       </span>
                       <span class="step-label">{formatToolLabel(step.tool_name, step.tool_input)}</span>
                     </button>
@@ -479,7 +487,7 @@
     {progressSteps}
     files={createdFiles}
     {contextTools}
-    {prompt}
+    {skillsUsed}
     on:openFile={handleInfoOpenFile}
     on:openFolder={handleOpenFolder}
   />
@@ -678,6 +686,15 @@
 
   .step-tool .step-label {
     color: var(--accent);
+  }
+
+  /* Skill steps use purple instead of the default accent color */
+  .step-skill .step-tool-icon {
+    color: rgba(139, 92, 246, 0.85);
+  }
+
+  .step-skill .step-label {
+    color: rgba(139, 92, 246, 0.85);
   }
 
   .step-content {

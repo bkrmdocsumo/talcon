@@ -4,10 +4,12 @@
   export let progressSteps = [];  // Array of { label, status: 'pending'|'in_progress'|'completed' }
   export let files = [];          // Array of { name, path, type?, size? }
   export let contextTools = [];   // Array of tool name strings
+  export let skillsUsed = [];     // Array of skill name strings loaded via use_skill
   const dispatch = createEventDispatcher();
 
   // Section collapse state
   let planOpen = true;
+  let skillsOpen = true;
   let filesOpen = true;
   let contextOpen = true;
 
@@ -26,6 +28,7 @@
   }
 
   function togglePlan() { planOpen = !planOpen; }
+  function toggleSkills() { skillsOpen = !skillsOpen; }
   function toggleFiles() { filesOpen = !filesOpen; }
   function toggleContext() { contextOpen = !contextOpen; }
 
@@ -96,6 +99,34 @@
       </div>
     {/if}
   </div>
+
+  <!-- Skills Section -->
+  {#if skillsUsed.length > 0}
+    <div class="panel-section">
+      <button class="section-header" on:click={toggleSkills}>
+        <span class="section-title">Skills</span>
+        <svg class="chevron" class:open={skillsOpen} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+
+      {#if skillsOpen}
+        <div class="section-content">
+          <div class="skill-list">
+            {#each skillsUsed as skill}
+              <div class="skill-tag">
+                <svg class="skill-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                  <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                </svg>
+                <span>{skill}</span>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <!-- Working Folder Section -->
   <div class="panel-section">
@@ -423,6 +454,30 @@
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+
+  /* ─── Skill Tags ─── */
+  .skill-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .skill-tag {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .skill-icon {
+    color: rgba(139, 92, 246, 0.7);
+    flex-shrink: 0;
   }
 
   /* ─── Context Tags ─── */

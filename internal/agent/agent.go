@@ -126,9 +126,10 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 		systemPrompt += memIdx
 	}
 
-	// Inject active plugin skills into the system prompt.
-	if skillCtx := loadSkillBodies(deps.BaseDir); skillCtx != "" {
-		systemPrompt += skillCtx
+	// Inject available skill index into system prompt (skills are loaded
+	// on demand via the use_skill tool, not dumped in full).
+	if skillIdx := buildSkillIndex(deps.BaseDir); skillIdx != "" {
+		systemPrompt += skillIdx
 	}
 
 	// Inject matched plugin command body if present.
@@ -282,7 +283,7 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 // StreamEvent is a high-level event emitted during a streaming agent turn.
 // The Type field determines which frontend event is fired.
 type StreamEvent struct {
-	Type      string `json:"type"`                 // "thinking_start", "thinking", "text", "tool_call", "tool_result", "todo_update"
+	Type      string `json:"type"`                 // "thinking_start", "thinking", "text", "tool_call", "tool_result", "todo_update", "skill_used"
 	Content   string `json:"content,omitempty"`    // delta text or tool result
 	ToolName  string `json:"tool_name,omitempty"`
 	ToolInput string `json:"tool_input,omitempty"`
@@ -331,9 +332,10 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 		systemPrompt += memIdx
 	}
 
-	// Inject active plugin skills into the system prompt.
-	if skillCtx := loadSkillBodies(deps.BaseDir); skillCtx != "" {
-		systemPrompt += skillCtx
+	// Inject available skill index into system prompt (skills are loaded
+	// on demand via the use_skill tool, not dumped in full).
+	if skillIdx := buildSkillIndex(deps.BaseDir); skillIdx != "" {
+		systemPrompt += skillIdx
 	}
 
 	// Inject matched plugin command body if present.
@@ -452,6 +454,19 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 				Content:  truncated,
 				ToolName: tb.Name,
 			})
+
+			// Emit skill_used event when a skill is loaded via use_skill tool.
+			if tb.Name == "use_skill" && !strings.HasPrefix(toolResult, "Error") {
+				var skillInput struct {
+					Name string `json:"name"`
+				}
+				if json.Unmarshal(tb.Input, &skillInput) == nil && skillInput.Name != "" {
+					emit(StreamEvent{
+						Type:    "skill_used",
+						Content: skillInput.Name,
+					})
+				}
+			}
 
 			// Emit file_created events for file-writing tools.
 			// Determine the output path field based on the tool name.
@@ -589,29 +604,38 @@ func buildMemoryIndex(baseDir string) string {
 	return "\n\n## Available Memories\nThe following memories are stored. Use `memory_search` or `list_memories` to retrieve details.\n" + strings.Join(lines, "\n") + "\n"
 }
 
-// loadSkillBodies reads all skill .md files from ~/.talon/plugins/skills/
-// and returns their concatenated content for injection into the system prompt.
-func loadSkillBodies(baseDir string) string {
-	skillDir := filepath.Join(baseDir, "plugins", "skills")
-	pattern := filepath.Join(skillDir, "*.md")
-	matches, err := filepath.Glob(pattern)
-	if err != nil || len(matches) == 0 {
+// skillMeta holds lightweight skill metadata for the skill index.
+type skillMeta struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// buildSkillIndex reads plugin skill metadata from plugins.json and returns
+// a lightweight index (name + description) for injection into the system
+// prompt. Unlike the old loadSkillBodies(), this does NOT inject full skill
+// content — the LLM uses the use_skill tool to load skills on demand.
+func buildSkillIndex(baseDir string) string {
+	pluginsPath := filepath.Join(baseDir, "plugins.json")
+	data, err := os.ReadFile(pluginsPath)
+	if err != nil {
 		return ""
 	}
-	var bodies []string
-	for _, path := range matches {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			log.Printf("[plugins] warning: failed to read skill %s: %v", path, err)
-			continue
-		}
-		content := strings.TrimSpace(string(data))
-		if content != "" {
-			bodies = append(bodies, content)
-		}
+
+	var pd struct {
+		Skills []skillMeta `json:"skills"`
 	}
-	if len(bodies) == 0 {
+	if json.Unmarshal(data, &pd) != nil || len(pd.Skills) == 0 {
 		return ""
 	}
-	return "\n\n## Active Skills\n\nThe following skills are available. Use them when relevant to the user's request.\n\n" + strings.Join(bodies, "\n\n---\n\n") + "\n"
+
+	var lines []string
+	for _, sk := range pd.Skills {
+		desc := sk.Description
+		if desc == "" {
+			desc = "No description"
+		}
+		lines = append(lines, fmt.Sprintf("- **%s**: %s", sk.Name, desc))
+	}
+
+	return "\n\n## Available Skills\n\nThe following skills provide specialized instructions for specific tasks. When the user's request matches a skill, use the `use_skill` tool to load it before proceeding.\n\n" + strings.Join(lines, "\n") + "\n"
 }

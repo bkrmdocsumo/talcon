@@ -240,6 +240,10 @@ export function handleStreamEvent(data) {
         }
         return msgs;
 
+      case 'skill_used':
+        // Skills are tracked in the agent store; chat mode just ignores this.
+        return msgs;
+
       case 'done':
         msg.role = 'assistant';
         msg.content = data.final_text;

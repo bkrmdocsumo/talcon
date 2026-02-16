@@ -22,6 +22,7 @@ export const agentStreamingIdx = writable(-1);
 export const agentProgressSteps = writable([]);       // Derived progress steps
 export const agentCreatedFiles = writable([]);        // Files created during the task
 export const agentContextTools = writable([]);        // Distinct tool names used
+export const agentSkillsUsed = writable([]);          // Skill names loaded via use_skill
 export const agentLoading = writable(false);
 export const agentIsStreaming = writable(false);
 
@@ -76,6 +77,7 @@ function saveCurrentAgentToBackground() {
     createdFiles: get(agentCreatedFiles),
     progressSteps: get(agentProgressSteps),
     contextTools: get(agentContextTools),
+    skillsUsed: get(agentSkillsUsed),
     taskTitle: get(agentTaskTitle),
   });
   backgroundAgentStreamingSessions.update(s => { s.add(currentId); return new Set(s); });
@@ -166,8 +168,8 @@ function handleAgentStreamEvent(data) {
         _agentCurrentThinkingIdx = -1;
         msg.steps = [...(msg.steps || []), { type: 'tool_call', tool_name: data.tool_name, tool_input: data.tool_input }];
 
-        // Track context tools (deduplicated), skip todo_write as it's a planning meta-tool.
-        if (data.tool_name !== 'todo_write') {
+        // Track context tools (deduplicated), skip todo_write and use_skill as meta-tools.
+        if (data.tool_name !== 'todo_write' && data.tool_name !== 'use_skill') {
           const toolLabel = formatToolName(data.tool_name);
           agentContextTools.update(tools => {
             if (tools.includes(toolLabel)) return tools;
@@ -204,6 +206,16 @@ function handleAgentStreamEvent(data) {
           agentCreatedFiles.update(files => {
             if (files.find(f => f.path === data.path)) return files;
             return [...files, { name: fName, path: data.path }];
+          });
+        }
+        // Return early — no message update needed.
+        return msgs;
+
+      case 'skill_used':
+        if (data.content) {
+          agentSkillsUsed.update(skills => {
+            if (skills.includes(data.content)) return skills;
+            return [...skills, data.content];
           });
         }
         // Return early — no message update needed.
@@ -282,7 +294,7 @@ function handleBgAgentStreamEvent(sessionId, data) {
     case 'tool_call':
       state.currentThinkingIdx = -1;
       msg.steps = [...(msg.steps || []), { type: 'tool_call', tool_name: data.tool_name, tool_input: data.tool_input }];
-      if (data.tool_name !== 'todo_write') {
+      if (data.tool_name !== 'todo_write' && data.tool_name !== 'use_skill') {
         const toolLabel = formatToolName(data.tool_name);
         if (!state.contextTools.includes(toolLabel)) {
           state.contextTools = [...state.contextTools, toolLabel];
@@ -311,6 +323,12 @@ function handleBgAgentStreamEvent(sessionId, data) {
         if (!state.createdFiles.find(f => f.path === data.path)) {
           state.createdFiles.push({ name: fName, path: data.path });
         }
+      }
+      return; // no message update
+
+    case 'skill_used':
+      if (data.content && !state.skillsUsed.includes(data.content)) {
+        state.skillsUsed = [...state.skillsUsed, data.content];
       }
       return; // no message update
 
@@ -400,6 +418,7 @@ export async function startAgentTask(text, readyFlag, files) {
   agentProgressSteps.set([]);
   agentCreatedFiles.set([]);
   agentContextTools.set([]);
+  agentSkillsUsed.set([]);
   agentLoading.set(true);
   agentIsStreaming.set(true);
   _agentCurrentThinkingIdx = -1;
@@ -510,6 +529,7 @@ export function newAgentTask() {
   agentProgressSteps.set([]);
   agentCreatedFiles.set([]);
   agentContextTools.set([]);
+  agentSkillsUsed.set([]);
   agentLoading.set(false);
   agentIsStreaming.set(false);
   activeAgentTaskId.set(null);
@@ -535,6 +555,7 @@ export async function selectAgentTask(sessionId) {
     agentCreatedFiles.set(state.createdFiles);
     agentProgressSteps.set(state.progressSteps);
     agentContextTools.set(state.contextTools);
+    agentSkillsUsed.set(state.skillsUsed || []);
     agentTaskTitle.set(state.taskTitle);
     agentLoading.set(state.streamingIdx >= 0);
     agentIsStreaming.set(state.streamingIdx >= 0);
@@ -596,10 +617,23 @@ export async function selectAgentTask(sessionId) {
     agentContextTools.set([
       ...new Set(
         allSteps
-          .filter(s => s.type === 'tool_call' && s.tool_name !== 'todo_write')
+          .filter(s => s.type === 'tool_call' && s.tool_name !== 'todo_write' && s.tool_name !== 'use_skill')
           .map(s => formatToolName(s.tool_name))
       ),
     ]);
+
+    // Rebuild skills used from use_skill tool calls.
+    const skillNames = [];
+    for (const step of allSteps.filter(s => s.type === 'tool_call' && s.tool_name === 'use_skill')) {
+      try {
+        const input = JSON.parse(step.tool_input || '{}');
+        if (input.name && !skillNames.includes(input.name)) {
+          skillNames.push(input.name);
+        }
+      } catch (_) {}
+    }
+    agentSkillsUsed.set(skillNames);
+
     agentCreatedFiles.set([]);
 
     // Try loading files from the backend.

@@ -20,7 +20,7 @@
   import {
     agentPhase, agentTaskHistory, activeAgentTaskId,
     agentTaskTitle, agentMessages, agentProgressSteps,
-    agentCreatedFiles, agentContextTools, agentLoading,
+    agentCreatedFiles, agentContextTools, agentSkillsUsed, agentLoading,
     agentIsStreaming,
     backgroundAgentStreamingSessions,
     refreshAgentTaskHistory, startAgentTask, sendAgentFollowUp,
@@ -370,6 +370,7 @@
           progressSteps={$agentProgressSteps}
           createdFiles={$agentCreatedFiles}
           contextTools={$agentContextTools}
+          skillsUsed={$agentSkillsUsed}
           on:openFile={handleOpenFile}
           on:openFolder={handleOpenFolder}
           on:revealFile={handleRevealFolder}

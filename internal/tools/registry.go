@@ -78,6 +78,9 @@ func RegisterStandardTools(r *Registry, baseDir string) {
 
 	r.Register(NewTodoWriteTool())
 
+	// Skill tool — loads skill content on demand
+	r.Register(NewUseSkillTool(baseDir))
+
 	// PDF tools
 	r.Register(&ReadPDFTool{})
 	r.Register(&CreatePDFTool{})
