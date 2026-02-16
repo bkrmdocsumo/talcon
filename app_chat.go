@@ -317,7 +317,6 @@ func (a *App) CancelStream(sessionID string) {
 
 	if sessionID != "" {
 		if cancel, ok := a.streamCancels[sessionID]; ok {
-			log.Printf("Cancelling stream for session %s", sessionID)
 			cancel()
 			delete(a.streamCancels, sessionID)
 		}
@@ -326,7 +325,6 @@ func (a *App) CancelStream(sessionID string) {
 
 	// Fallback: cancel all active streams.
 	for sid, cancel := range a.streamCancels {
-		log.Printf("Cancelling stream for session %s", sid)
 		cancel()
 		delete(a.streamCancels, sid)
 	}
@@ -502,7 +500,6 @@ func (a *App) matchPluginCommand(input string) string {
 		log.Printf("[plugins] failed to load command %s: %v", matched, err)
 		return ""
 	}
-	log.Printf("[plugins] matched command /%s", matched)
 	return body
 }
 

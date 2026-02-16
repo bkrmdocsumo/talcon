@@ -476,10 +476,7 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    background-image:
-      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-    background-size: 40px 40px;
+    background: var(--bg-primary);
   }
 
   .chat-container {

@@ -48,7 +48,7 @@ type TranscribeResult struct {
 // mimeType is the MIME type of the audio (e.g. "audio/webm", "audio/wav").
 func Transcribe(cfg TranscribeConfig, audioBase64 string, mimeType string) (*TranscribeResult, error) {
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("no API key configured for speech provider %q — add it in Settings", cfg.Provider)
+		return nil, fmt.Errorf("Please setup OPENAI_API_KEY in Settings")
 	}
 
 	audioBytes, err := base64.StdEncoding.DecodeString(audioBase64)

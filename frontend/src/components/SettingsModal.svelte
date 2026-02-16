@@ -1,5 +1,5 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import { GetSettings, SaveSettings, GetStatus, GetDictationStatus, RequestAccessibility, GetExecApprovals, SaveExecApprovals } from '../../wailsjs/go/main/App';
 
   export let telegramStatus = 'stopped';
@@ -17,6 +17,7 @@
   let settingsDeepgramKey = '';
   let settingsHotkeyEnabled = false;
   let settingsHotkeyModifier = 'left_option';
+  let hotkeyListening = false;
   let dictationAccessibility = false;
 
   // Command approvals state
@@ -149,7 +150,61 @@
     }
   }
 
+  const modifierLabels = {
+    left_option: 'Left Option (⌥)',
+    right_option: 'Right Option (⌥)',
+    left_cmd: 'Left Command (⌘)',
+    right_cmd: 'Right Command (⌘)',
+    left_ctrl: 'Left Control (⌃)',
+    right_ctrl: 'Right Control (⌃)',
+  };
+
+  function getModifierLabel(value) {
+    return modifierLabels[value] || value;
+  }
+
+  function windowHotkeyHandler(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
+    const isLeft = e.location === 1;
+    const isRight = e.location === 2;
+    let detected = '';
+
+    if (e.key === 'Alt') {
+      detected = isRight ? 'right_option' : 'left_option';
+    } else if (e.key === 'Meta') {
+      detected = isRight ? 'right_cmd' : 'left_cmd';
+    } else if (e.key === 'Control') {
+      detected = isRight ? 'right_ctrl' : 'left_ctrl';
+    } else if (e.key === 'Escape') {
+      stopHotkeyCapture();
+      return;
+    }
+
+    if (detected) {
+      settingsHotkeyModifier = detected;
+      stopHotkeyCapture();
+    }
+  }
+
+  function startHotkeyCapture() {
+    hotkeyListening = true;
+    window.addEventListener('keydown', windowHotkeyHandler, true);
+  }
+
+  function stopHotkeyCapture() {
+    hotkeyListening = false;
+    window.removeEventListener('keydown', windowHotkeyHandler, true);
+  }
+
+  onDestroy(() => {
+    window.removeEventListener('keydown', windowHotkeyHandler, true);
+  });
+
   function handleKeydown(e) {
+    if (hotkeyListening) return;
     if (e.key === 'Escape') {
       close();
     }
@@ -340,19 +395,28 @@
 
             {#if settingsHotkeyEnabled}
               <label class="field-label" for="settings-hotkey-modifier">Hotkey (hold to record)</label>
-              <select
+              <!-- svelte-ignore a11y-no-static-element-interactions -->
+              <div
                 id="settings-hotkey-modifier"
-                class="field-input field-select"
-                bind:value={settingsHotkeyModifier}
+                class="hotkey-capture-input"
+                class:hotkey-listening={hotkeyListening}
+                role="button"
+                on:click={hotkeyListening ? stopHotkeyCapture : startHotkeyCapture}
               >
-                <option value="left_option">Left Option (⌥)</option>
-                <option value="right_option">Right Option (⌥)</option>
-                <option value="left_cmd">Left Command (⌘)</option>
-                <option value="right_cmd">Right Command (⌘)</option>
-                <option value="left_ctrl">Left Control (⌃)</option>
-                <option value="right_ctrl">Right Control (⌃)</option>
-              </select>
-              <p class="field-hint">Hold this key to record, release to transcribe & paste. Short taps (&lt;300ms) are ignored.</p>
+                {#if hotkeyListening}
+                  <span class="hotkey-listening-text">Press a modifier key...</span>
+                {:else}
+                  <span class="hotkey-current-key">{getModifierLabel(settingsHotkeyModifier)}</span>
+                  <span class="hotkey-change-hint">Click to change</span>
+                {/if}
+              </div>
+              <p class="field-hint">
+                {#if hotkeyListening}
+                  Press <strong>Option</strong>, <strong>Command</strong>, or <strong>Control</strong> (left or right) to set your hotkey.
+                {:else}
+                  Hold this key to record, release to transcribe & paste. Short taps (&lt;300ms) are ignored.
+                {/if}
+              </p>
 
               <div class="accessibility-row">
                 <div class="accessibility-info">
@@ -501,9 +565,11 @@
     border: 1px solid var(--border);
     border-radius: 14px;
     width: 480px;
+    height: 620px;
     max-width: calc(100vw - 32px);
     max-height: calc(100vh - 64px);
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
     animation: modalSlideUp 0.2s ease;
   }
@@ -518,6 +584,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 18px 20px 0;
+    flex-shrink: 0;
   }
 
   .modal-header h2 {
@@ -553,6 +620,7 @@
     padding: 0 20px;
     margin-top: 12px;
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
   }
 
   .tab-btn {
@@ -581,6 +649,8 @@
 
   .modal-body {
     padding: 20px;
+    overflow-y: auto;
+    flex: 1 1 0;
   }
 
   .settings-loading {
@@ -656,6 +726,7 @@
     justify-content: flex-end;
     gap: 8px;
     padding: 0 20px 20px;
+    flex-shrink: 0;
   }
 
   .btn-cancel {
@@ -751,6 +822,71 @@
   .field-select option {
     background: var(--bg-secondary);
     color: var(--text-primary);
+  }
+
+  /* ─── Hotkey Capture Input ─── */
+  .hotkey-capture-input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    user-select: none;
+    min-height: 40px;
+    box-sizing: border-box;
+  }
+
+  .hotkey-capture-input:hover {
+    border-color: var(--text-muted);
+  }
+
+  .hotkey-capture-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+
+  .hotkey-capture-input.hotkey-listening {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+    background: rgba(99, 102, 241, 0.05);
+    animation: hotkey-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes hotkey-pulse {
+    0%, 100% { box-shadow: 0 0 0 3px var(--accent-glow); }
+    50% { box-shadow: 0 0 0 5px var(--accent-glow), 0 0 12px var(--accent-glow); }
+  }
+
+  .hotkey-listening-text {
+    color: var(--accent);
+    font-weight: 500;
+    font-size: 13px;
+    animation: hotkey-blink 1s ease-in-out infinite;
+  }
+
+  @keyframes hotkey-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .hotkey-current-key {
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .hotkey-change-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 400;
   }
 
   /* ─── Dictation Anywhere ─── */

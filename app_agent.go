@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,7 +100,6 @@ func (a *App) OpenFileInApp(filePath string) error {
 		}
 	}
 
-	log.Printf("[agent] opening file: %s", filePath)
 	cmd := exec.Command("open", filePath)
 	return cmd.Run()
 }
@@ -115,7 +113,6 @@ func (a *App) RevealInFinder(filePath string) error {
 		}
 	}
 
-	log.Printf("[agent] revealing in Finder: %s", filePath)
 	cmd := exec.Command("open", "-R", filePath)
 	return cmd.Run()
 }

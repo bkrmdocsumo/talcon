@@ -414,17 +414,18 @@
 
   <!-- Sidebar Footer -->
   <div class="sidebar-footer">
+    <!-- Plugins button (renamed to "Toolkit" for simplicity) -->
     <button
       class="footer-nav-btn"
       class:active={activeTab === 'plugins'}
       on:click={() => dispatch('openPlugins')}
-      title="Plugins"
+      title="Toolkit"
     >
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
         <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
       </svg>
-      <span>Plugins</span>
+      <span>Toolkit</span>
     </button>
 
     <div class="footer-divider"></div>

@@ -100,34 +100,6 @@
     {/if}
   </div>
 
-  <!-- Skills Section -->
-  {#if skillsUsed.length > 0}
-    <div class="panel-section">
-      <button class="section-header" on:click={toggleSkills}>
-        <span class="section-title">Skills</span>
-        <svg class="chevron" class:open={skillsOpen} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </button>
-
-      {#if skillsOpen}
-        <div class="section-content">
-          <div class="skill-list">
-            {#each skillsUsed as skill}
-              <div class="skill-tag">
-                <svg class="skill-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-                  <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-                </svg>
-                <span>{skill}</span>
-              </div>
-            {/each}
-          </div>
-        </div>
-      {/if}
-    </div>
-  {/if}
-
   <!-- Working Folder Section -->
   <div class="panel-section">
     <button class="section-header" on:click={toggleFiles}>
@@ -177,6 +149,34 @@
       </div>
     {/if}
   </div>
+
+  <!-- Skills Section -->
+  {#if skillsUsed.length > 0}
+    <div class="panel-section">
+      <button class="section-header" on:click={toggleSkills}>
+        <span class="section-title">Skills</span>
+        <svg class="chevron" class:open={skillsOpen} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+
+      {#if skillsOpen}
+        <div class="section-content">
+          <div class="skill-list">
+            {#each skillsUsed as skill}
+              <div class="skill-tag">
+                <svg class="skill-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+                  <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+                </svg>
+                <span>{skill}</span>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   <!-- Context Section -->
   <div class="panel-section">

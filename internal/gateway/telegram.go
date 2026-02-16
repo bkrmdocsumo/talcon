@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -28,7 +29,8 @@ type TelegramNotify func(sessionID string, userText string, replyText string)
 func RunTelegram(ctx context.Context, cfg *config.Config, deps agent.Deps, notify TelegramNotify) {
 	bot, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
 	if err != nil {
-		log.Printf("[telegram] failed to init bot: %v", err)
+		safeErr := regexp.MustCompile(`/bot[^/]+/`).ReplaceAllString(err.Error(), "/bot****/")
+		log.Printf("[telegram] failed to init bot: %s", safeErr)
 		return
 	}
 

@@ -378,7 +378,6 @@ func stopDictationAndType() {
 	onError := dictOnError
 	dictMu.Unlock()
 
-	C.PlayDictationSound(1)       // "Tink" — stop
 	C.ShowDictationOverlay(2)     // switch overlay to "Thinking…"
 	C.SetMenuBarState(2)          // transcribing menu bar icon
 
@@ -480,7 +479,6 @@ func stopDictationAndType() {
 	defer C.free(unsafe.Pointer(cText))
 	C.TypeTextViaClipboard(cText)
 
-	C.PlayDictationSound(2) // "Glass" — success
 	C.SetMenuBarState(0)    // back to idle
 
 	log.Println("[dictation] text pasted successfully")
@@ -506,7 +504,6 @@ func fixSelectedTextGrammar() {
 	onError := dictOnError
 	dictMu.Unlock()
 
-	C.PlayDictationSound(1)       // "Tink" — acknowledging double-tap
 	C.ShowDictationOverlay(2)     // "Thinking…"
 	C.SetMenuBarState(2)          // transcribing icon
 
@@ -595,7 +592,6 @@ func fixSelectedTextGrammar() {
 	defer C.free(unsafe.Pointer(cText))
 	C.TypeTextViaClipboard(cText)
 
-	C.PlayDictationSound(2) // "Glass" — success
 	C.SetMenuBarState(0)    // back to idle
 
 	log.Println("[dictation] grammar-fixed text pasted successfully")

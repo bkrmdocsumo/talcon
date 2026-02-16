@@ -191,8 +191,6 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 		// Process each tool call.
 		toolBlocks := resp.ToolUseBlocks()
 		for _, tb := range toolBlocks {
-			log.Printf("[tool] %s(%s)", tb.Name, string(tb.Input))
-
 			// Record the tool call step.
 			result.Steps = append(result.Steps, Step{
 				Type:      "tool_call",
@@ -208,8 +206,6 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 			if err != nil {
 				toolResult = fmt.Sprintf("Tool execution error: %v", err)
 			}
-
-			log.Printf("[tool] %s -> %d bytes result", tb.Name, len(toolResult))
 
 			// Record the tool result step.
 			result.Steps = append(result.Steps, Step{
@@ -242,10 +238,8 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 						}
 						filename = fmt.Sprintf("script_%d%s", time.Now().Unix(), ext)
 					}
-					savePath := filepath.Join(sessionWorkDir, filepath.Clean(filename))
-					if err := os.WriteFile(savePath, []byte(codeInput.Code), 0o644); err == nil {
-						log.Printf("[agent] auto-saved execute_code to %s", savePath)
-					} else {
+				savePath := filepath.Join(sessionWorkDir, filepath.Clean(filename))
+				if err := os.WriteFile(savePath, []byte(codeInput.Code), 0o644); err != nil {
 						log.Printf("[agent] failed to auto-save execute_code to %s: %v", savePath, err)
 					}
 				}
@@ -419,8 +413,6 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 		// Process each tool call.
 		toolBlocks := resp.ToolUseBlocks()
 		for _, tb := range toolBlocks {
-			log.Printf("[tool] %s(%s)", tb.Name, string(tb.Input))
-
 			// Record and emit the tool call step.
 			result.Steps = append(result.Steps, Step{
 				Type:      "tool_call",
@@ -438,8 +430,6 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 			if err != nil {
 				toolResult = fmt.Sprintf("Tool execution error: %v", err)
 			}
-
-			log.Printf("[tool] %s -> %d bytes result", tb.Name, len(toolResult))
 
 			truncated := util.TruncateForUI(toolResult, 2000)
 
@@ -532,7 +522,6 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 						Content:  savePath,
 						ToolName: filepath.Base(savePath),
 					})
-					log.Printf("[agent] auto-saved execute_code to %s", savePath)
 				} else {
 					log.Printf("[agent] failed to auto-save execute_code to %s: %v", savePath, err)
 				}
