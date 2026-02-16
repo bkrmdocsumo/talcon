@@ -468,6 +468,10 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 40px 40px;
   }
 
   /* ─── Hotkey Banner ─── */

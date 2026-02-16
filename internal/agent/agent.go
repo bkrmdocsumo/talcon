@@ -86,6 +86,11 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 	if sessionWorkDir == "" {
 		sessionWorkDir = filepath.Join(deps.BaseDir, "sessions", sessionID)
 	}
+	// Ensure the workspace directory exists so that auto-saved code files
+	// and other artifacts can be written there.
+	if err := os.MkdirAll(sessionWorkDir, 0o755); err != nil {
+		log.Printf("Warning: failed to create session workspace dir %s: %v", sessionWorkDir, err)
+	}
 	ctx = tools.WithSessionDir(ctx, sessionWorkDir)
 
 	// Lock this session to prevent concurrent writes.
@@ -185,6 +190,39 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 				ToolName: tb.Name,
 			})
 
+			// For execute_code: auto-save code to a file on successful runs.
+			if tb.Name == "execute_code" && sessionWorkDir != "" &&
+				!strings.HasPrefix(toolResult, "Exit code") &&
+				!strings.HasPrefix(toolResult, "Sandbox error") &&
+				!strings.HasPrefix(toolResult, "Error") {
+				var codeInput struct {
+					Language string `json:"language"`
+					Code     string `json:"code"`
+					Filename string `json:"filename"`
+				}
+				if json.Unmarshal(tb.Input, &codeInput) == nil && codeInput.Code != "" {
+					filename := codeInput.Filename
+					if filename == "" {
+						ext := ".txt"
+						switch codeInput.Language {
+						case "python":
+							ext = ".py"
+						case "javascript":
+							ext = ".js"
+						case "go":
+							ext = ".go"
+						}
+						filename = fmt.Sprintf("script_%d%s", time.Now().Unix(), ext)
+					}
+					savePath := filepath.Join(sessionWorkDir, filepath.Clean(filename))
+					if err := os.WriteFile(savePath, []byte(codeInput.Code), 0o644); err == nil {
+						log.Printf("[agent] auto-saved execute_code to %s", savePath)
+					} else {
+						log.Printf("[agent] failed to auto-save execute_code to %s: %v", savePath, err)
+					}
+				}
+			}
+
 			// Build tool_result content block as per Anthropic spec.
 			toolResultContent := []map[string]interface{}{
 				{
@@ -237,6 +275,11 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 	sessionWorkDir := tools.SessionDirFromContext(ctx)
 	if sessionWorkDir == "" {
 		sessionWorkDir = filepath.Join(deps.BaseDir, "sessions", sessionID)
+	}
+	// Ensure the workspace directory exists so that auto-saved code files
+	// and other artifacts can be written there.
+	if err := os.MkdirAll(sessionWorkDir, 0o755); err != nil {
+		log.Printf("Warning: failed to create session workspace dir %s: %v", sessionWorkDir, err)
 	}
 	ctx = tools.WithSessionDir(ctx, sessionWorkDir)
 
@@ -426,15 +469,17 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 						}
 						filename = fmt.Sprintf("script_%d%s", time.Now().Unix(), ext)
 					}
-					savePath := filepath.Join(sessionWorkDir, filepath.Clean(filename))
-					if err := os.WriteFile(savePath, []byte(codeInput.Code), 0o644); err == nil {
-						emit(StreamEvent{
-							Type:     "file_created",
-							Content:  savePath,
-							ToolName: filepath.Base(savePath),
-						})
-						log.Printf("[agent] auto-saved execute_code to %s", savePath)
-					}
+				savePath := filepath.Join(sessionWorkDir, filepath.Clean(filename))
+				if err := os.WriteFile(savePath, []byte(codeInput.Code), 0o644); err == nil {
+					emit(StreamEvent{
+						Type:     "file_created",
+						Content:  savePath,
+						ToolName: filepath.Base(savePath),
+					})
+					log.Printf("[agent] auto-saved execute_code to %s", savePath)
+				} else {
+					log.Printf("[agent] failed to auto-save execute_code to %s: %v", savePath, err)
+				}
 				}
 			}
 

@@ -6,6 +6,7 @@ import {
   LoadSession,
   DeleteSession,
   SendAgentTaskStream,
+  SendAgentTaskStreamWithFiles,
   CancelStream,
   ListTaskFiles,
 } from '../../../wailsjs/go/main/App';
@@ -366,14 +367,15 @@ function finishAgentStream() {
   refreshAgentTaskHistory();
 }
 
-export async function startAgentTask(text, readyFlag) {
-  if (!text || get(agentLoading) || !readyFlag) return;
+export async function startAgentTask(text, readyFlag, files) {
+  if ((!text && (!files || files.length === 0)) || get(agentLoading) || !readyFlag) return;
 
   const newId = await NewAgentSession();
   activeAgentTaskId.set(newId);
 
-  let title = text.trim();
+  let title = (text || '').trim();
   if (title.length > 50) title = title.substring(0, 50) + '...';
+  if (!title && files && files.length > 0) title = `${files.length} file${files.length > 1 ? 's' : ''} attached`;
   agentTaskTitle.set(title);
 
   // Immediately show the new task with its title in the sidebar.
@@ -382,8 +384,16 @@ export async function startAgentTask(text, readyFlag) {
     ...history,
   ]);
 
+  const userMessage = {
+    role: 'user',
+    content: text || '',
+    files: files && files.length > 0
+      ? files.map(f => ({ name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl }))
+      : undefined,
+  };
+
   agentMessages.set([
-    { role: 'user', content: text },
+    userMessage,
     { role: 'assistant', content: '', steps: [], isStreaming: true },
   ]);
   agentStreamingIdx.set(1);
@@ -403,7 +413,16 @@ export async function startAgentTask(text, readyFlag) {
 
   try {
     const sid = get(activeAgentTaskId);
-    await SendAgentTaskStream(text, sid);
+    if (files && files.length > 0) {
+      const attachments = files.map(f => ({
+        name: f.name,
+        mime_type: f.type,
+        data: f.data,
+      }));
+      await SendAgentTaskStreamWithFiles(text || '', attachments, sid);
+    } else {
+      await SendAgentTaskStream(text, sid);
+    }
   } catch (err) {
     agentMessages.update(msgs => {
       const updated = [...msgs];
@@ -417,12 +436,20 @@ export async function startAgentTask(text, readyFlag) {
   }
 }
 
-export async function sendAgentFollowUp(text, readyFlag) {
-  if (!text || get(agentLoading) || !readyFlag) return;
+export async function sendAgentFollowUp(text, readyFlag, files) {
+  if ((!text && (!files || files.length === 0)) || get(agentLoading) || !readyFlag) return;
+
+  const userMessage = {
+    role: 'user',
+    content: text || '',
+    files: files && files.length > 0
+      ? files.map(f => ({ name: f.name, type: f.type, size: f.size, dataUrl: f.dataUrl }))
+      : undefined,
+  };
 
   agentMessages.update(msgs => [
     ...msgs,
-    { role: 'user', content: text },
+    userMessage,
     { role: 'assistant', content: '', steps: [], isStreaming: true },
   ]);
 
@@ -440,7 +467,16 @@ export async function sendAgentFollowUp(text, readyFlag) {
 
   try {
     const sid = get(activeAgentTaskId);
-    await SendAgentTaskStream(text, sid);
+    if (files && files.length > 0) {
+      const attachments = files.map(f => ({
+        name: f.name,
+        mime_type: f.type,
+        data: f.data,
+      }));
+      await SendAgentTaskStreamWithFiles(text || '', attachments, sid);
+    } else {
+      await SendAgentTaskStream(text, sid);
+    }
   } catch (err) {
     agentMessages.update(msgs => {
       const updated = [...msgs];
@@ -522,6 +558,9 @@ export async function selectAgentTask(sessionId) {
           tool_name: s.tool_name,
           tool_input: s.tool_input,
         })),
+        files: m.files && m.files.length > 0
+          ? m.files.map(f => ({ name: f.name, type: f.type }))
+          : undefined,
       }));
 
     agentMessages.set(msgs);

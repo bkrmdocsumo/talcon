@@ -54,6 +54,10 @@
     dispatch('openFile', { path: file.path, name: file.name });
   }
 
+  function handleRevealFolder() {
+    dispatch('openFolder', { path: file.path, name: file.name });
+  }
+
   $: ext = fileExtension(file?.name || '');
   $: badge = fileTypeBadge(file?.name || '');
   $: icon = iconType(file?.name || '');
@@ -102,6 +106,11 @@
     </div>
 
     <div class="file-actions">
+      <button class="file-action-btn btn-folder" on:click={handleRevealFolder} title="Show in Finder">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+      </button>
       <button class="file-action-btn btn-open" on:click={handleOpen} title="Open file">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
@@ -196,6 +205,19 @@
   .file-action-btn:hover {
     background: var(--bg-hover);
     color: var(--text-secondary);
+  }
+
+  .btn-folder {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 8px;
+    color: var(--text-muted);
+  }
+
+  .btn-folder:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
   }
 
   .btn-open {

@@ -43,12 +43,20 @@ type ChatResponse struct {
 	FinalText string     `json:"final_text"`
 }
 
+// HistoryMessageFile holds minimal file metadata so the frontend can display
+// file attachment chips when loading a saved session.
+type HistoryMessageFile struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
 // HistoryMessage is a simplified message format for loading past sessions
 // into the frontend.
 type HistoryMessage struct {
-	Role    string     `json:"role"`
-	Content string     `json:"content"`
-	Steps   []ChatStep `json:"steps"`
+	Role    string               `json:"role"`
+	Content string               `json:"content"`
+	Steps   []ChatStep           `json:"steps"`
+	Files   []HistoryMessageFile `json:"files,omitempty"`
 }
 
 // SendMessage sends a plain text user message to the agent and returns the response.
@@ -479,7 +487,52 @@ func parseMessageForFrontend(msg session.Message) *HistoryMessage {
 			if typ, _ := blocks[0]["type"].(string); typ == "tool_result" {
 				return nil
 			}
+
+			// Multimodal user message — extract user text and file metadata
+			// separately so the frontend can show file chips without dumping
+			// potentially enormous file contents into the message bubble.
+			var textParts []string
+			var files []HistoryMessageFile
+			for _, block := range blocks {
+				typ, _ := block["type"].(string)
+				switch typ {
+				case "text":
+					t, _ := block["text"].(string)
+					if strings.HasPrefix(t, "File: ") {
+						// This is a file content dump created by buildUserContent.
+						// Extract just the file name (first line after "File: ").
+						name := t[len("File: "):]
+						if idx := strings.Index(name, "\n"); idx >= 0 {
+							name = name[:idx]
+						}
+						files = append(files, HistoryMessageFile{Name: name, Type: "text/plain"})
+					} else {
+						textParts = append(textParts, t)
+					}
+				case "image":
+					// Image attachment — extract media_type for the chip.
+					mime := ""
+					if src, ok := block["source"].(map[string]interface{}); ok {
+						mime, _ = src["media_type"].(string)
+					}
+					files = append(files, HistoryMessageFile{Name: "image", Type: mime})
+				case "document":
+					mime := ""
+					if src, ok := block["source"].(map[string]interface{}); ok {
+						mime, _ = src["media_type"].(string)
+					}
+					files = append(files, HistoryMessageFile{Name: "document.pdf", Type: mime})
+				}
+			}
+			return &HistoryMessage{
+				Role:    "user",
+				Content: strings.Join(textParts, "\n"),
+				Steps:   []ChatStep{},
+				Files:   files,
+			}
 		}
+
+		// Plain text user message.
 		text := session.ExtractTextFromContent(msg.Content)
 		return &HistoryMessage{
 			Role:    "user",

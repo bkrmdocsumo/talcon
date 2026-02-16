@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy, afterUpdate, tick } from 'svelte';
-  import { OpenFileInApp } from '../wailsjs/go/main/App';
+  import { OpenFileInApp, RevealInFinder } from '../wailsjs/go/main/App';
   import { EventsOn } from '../wailsjs/runtime/runtime';
 
   // ─── Stores ───
@@ -209,15 +209,15 @@
   // ─── Agent event handlers ───
 
   function handleAgentWelcomeSend(e) {
-    startAgentTask(e.detail.text, $ready);
+    startAgentTask(e.detail.text, $ready, e.detail.files);
   }
 
   function handleStartAgentTask(e) {
-    startAgentTask(e.detail.text, $ready);
+    startAgentTask(e.detail.text, $ready, e.detail.files);
   }
 
   function handleAgentFollowUp(e) {
-    sendAgentFollowUp(e.detail.text, $ready);
+    sendAgentFollowUp(e.detail.text, $ready, e.detail.files);
   }
 
   function handleAgentCancel() {
@@ -243,6 +243,16 @@
       await OpenFileInApp(path);
     } catch (err) {
       console.error('Failed to open file:', err);
+    }
+  }
+
+  async function handleRevealFolder(e) {
+    const { path } = e.detail;
+    if (!path) return;
+    try {
+      await RevealInFinder(path);
+    } catch (err) {
+      console.error('Failed to reveal in Finder:', err);
     }
   }
 
@@ -337,6 +347,7 @@
           contextTools={$agentContextTools}
           on:openFile={handleOpenFile}
           on:openFolder={handleOpenFolder}
+          on:revealFile={handleRevealFolder}
           on:sendFollowUp={handleAgentFollowUp}
           on:cancel={handleAgentCancel}
         />
@@ -387,7 +398,7 @@
               {#if $chatCreatedFiles.length > 0 && !$loading}
                 <div class="chat-file-cards">
                   {#each $chatCreatedFiles as file}
-                    <AgentFileCard {file} on:openFile={handleOpenFile} />
+                    <AgentFileCard {file} on:openFile={handleOpenFile} on:openFolder={handleRevealFolder} />
                   {/each}
                 </div>
               {/if}
@@ -438,6 +449,10 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 40px 40px;
   }
 
   .chat-container {

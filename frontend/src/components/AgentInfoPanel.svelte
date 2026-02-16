@@ -174,7 +174,7 @@
 
 <style>
   .info-panel {
-    width: 280px;
+    width: 220px;
     height: 100%;
     background: var(--bg-primary);
     border-left: 1px solid var(--border);

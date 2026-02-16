@@ -14,6 +14,30 @@ import (
 	"github.com/user/talon/internal/session"
 )
 
+// SendAgentTaskStreamWithFiles starts a streaming agent turn for an agent task
+// with file attachments. Files are converted to multimodal content blocks using
+// the same buildUserContent helper that chat mode uses.
+func (a *App) SendAgentTaskStreamWithFiles(input string, files []FileAttachment, sessionID string) error {
+	if !a.ready {
+		return fmt.Errorf("%s", a.initError)
+	}
+	content := buildUserContent(input, files)
+
+	sid := sessionID
+	if sid == "" {
+		sid = a.sessionID
+	}
+
+	baseDir, err := config.TalonDir()
+	if err != nil {
+		return fmt.Errorf("resolve talon dir: %w", err)
+	}
+	workDir := filepath.Join(baseDir, "agents", sid)
+
+	go a.runStream(sid, content, workDir, "agent:stream:event")
+	return nil
+}
+
 // SendAgentTaskStream starts a streaming agent turn for an agent task.
 // The sessionID parameter specifies which session to continue — the frontend
 // passes this explicitly to avoid races caused by the shared a.sessionID
@@ -79,6 +103,20 @@ func (a *App) OpenFileInApp(filePath string) error {
 
 	log.Printf("[agent] opening file: %s", filePath)
 	cmd := exec.Command("open", filePath)
+	return cmd.Run()
+}
+
+// RevealInFinder reveals a file in Finder, highlighting it in its parent folder.
+func (a *App) RevealInFinder(filePath string) error {
+	// Expand ~ prefix.
+	if strings.HasPrefix(filePath, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			filePath = filepath.Join(home, filePath[2:])
+		}
+	}
+
+	log.Printf("[agent] revealing in Finder: %s", filePath)
+	cmd := exec.Command("open", "-R", filePath)
 	return cmd.Run()
 }
 

@@ -26,7 +26,21 @@
   let contentContainer;
   let input = '';
   let textareaEl;
+  let fileInputEl;
+  let files = [];
   let skipNextScroll = false;
+  let dragOver = false;
+
+  // File attachment constants (same as ChatInput)
+  const ACCEPTED_TYPES = [
+    'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+    'application/pdf',
+    'text/plain', 'text/csv', 'text/markdown', 'text/html',
+    'application/json', 'application/xml',
+  ].join(',');
+
+  const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+  const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
   afterUpdate(() => {
     if (skipNextScroll) {
@@ -73,6 +87,10 @@
     dispatch('openFile', e.detail);
   }
 
+  function handleRevealFile(e) {
+    dispatch('revealFile', e.detail);
+  }
+
   function handleOpenFolder() {
     dispatch('openFolder');
   }
@@ -101,9 +119,10 @@
 
   function handleSend() {
     const text = input.trim();
-    if (!text || loading) return;
-    dispatch('sendFollowUp', { text });
+    if ((!text && files.length === 0) || loading) return;
+    dispatch('sendFollowUp', { text, files: [...files] });
     input = '';
+    files = [];
     if (textareaEl) {
       textareaEl.style.height = 'auto';
     }
@@ -111,6 +130,87 @@
 
   function handleCancel() {
     dispatch('cancel');
+  }
+
+  // ─── File attachment helpers ───
+  function openFilePicker() {
+    fileInputEl?.click();
+  }
+
+  async function handleFileSelect(e) {
+    const selected = Array.from(e.target.files || []);
+    for (const file of selected) {
+      if (file.size > MAX_FILE_SIZE) {
+        alert(`File "${file.name}" exceeds the 20 MB limit.`);
+        continue;
+      }
+      const result = await readFileAsBase64(file);
+      files = [...files, {
+        name: file.name,
+        type: file.type || 'text/plain',
+        size: file.size,
+        dataUrl: result.dataUrl,
+        data: result.base64,
+      }];
+    }
+    e.target.value = '';
+    textareaEl?.focus();
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        const base64 = dataUrl.split(',')[1] || '';
+        resolve({ dataUrl, base64 });
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function removeFile(index) {
+    files = files.filter((_, i) => i !== index);
+    textareaEl?.focus();
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function isImage(mime) {
+    return IMAGE_TYPES.has(mime);
+  }
+
+  function handleDragOver(e) {
+    e.preventDefault();
+    dragOver = true;
+  }
+
+  function handleDragLeave() {
+    dragOver = false;
+  }
+
+  async function handleDrop(e) {
+    e.preventDefault();
+    dragOver = false;
+    const droppedFiles = Array.from(e.dataTransfer?.files || []);
+    for (const file of droppedFiles) {
+      if (file.size > MAX_FILE_SIZE) {
+        alert(`File "${file.name}" exceeds the 20 MB limit.`);
+        continue;
+      }
+      const result = await readFileAsBase64(file);
+      files = [...files, {
+        name: file.name,
+        type: file.type || 'text/plain',
+        size: file.size,
+        dataUrl: result.dataUrl,
+        data: result.base64,
+      }];
+    }
   }
 
   // ─── Copy helpers ───
@@ -159,7 +259,26 @@
         {#each messages as message, msgIdx}
           {#if message.role === 'user'}
             <div class="user-pill">
-              <span class="user-pill-text">{message.content}</span>
+              {#if message.files && message.files.length > 0}
+                <div class="user-pill-files">
+                  {#each message.files as file}
+                    <div class="user-pill-file-chip">
+                      {#if IMAGE_TYPES.has(file.type)}
+                        <img class="user-pill-file-thumb" src={file.dataUrl} alt={file.name} />
+                      {:else}
+                        <svg class="user-pill-file-icon" width="12" height="12" viewBox="0 0 24 24" fill="none">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                          <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      {/if}
+                      <span class="user-pill-file-name">{file.name}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+              {#if message.content}
+                <span class="user-pill-text">{message.content}</span>
+              {/if}
             </div>
           {:else if message.role === 'assistant'}
             <!-- Summary line (show after first assistant response only, when not streaming) -->
@@ -251,7 +370,7 @@
         {#if createdFiles.length > 0 && !isStreaming}
           <div class="file-cards">
             {#each createdFiles as file}
-              <AgentFileCard {file} on:openFile={handleOpenFile} />
+              <AgentFileCard {file} on:openFile={handleOpenFile} on:openFolder={handleRevealFile} />
             {/each}
           </div>
         {/if}
@@ -260,7 +379,41 @@
 
     <!-- Chat Input -->
     <footer class="workspace-input-area">
-      <div class="workspace-input-container">
+      <div
+        class="workspace-input-container"
+        class:drag-over={dragOver}
+        on:dragover={handleDragOver}
+        on:dragleave={handleDragLeave}
+        on:drop={handleDrop}
+        role="group"
+        aria-label="Follow-up input"
+      >
+        {#if files.length > 0}
+          <div class="file-preview-row">
+            {#each files as file, i}
+              <div class="file-chip" title={file.name}>
+                {#if isImage(file.type)}
+                  <img class="file-thumb" src={file.dataUrl} alt={file.name} />
+                {:else}
+                  <div class="file-icon">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </div>
+                {/if}
+                <span class="file-name">{file.name}</span>
+                <span class="file-size">{formatSize(file.size)}</span>
+                <button class="file-remove" on:click={() => removeFile(i)} title="Remove file">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                    <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
         <textarea
           bind:this={textareaEl}
           bind:value={input}
@@ -271,31 +424,53 @@
           disabled={disabled || loading}
         ></textarea>
         <div class="workspace-input-bottom">
-          <div class="workspace-input-spacer"></div>
-          {#if loading}
+          <div class="workspace-input-bottom-left">
             <button
-              class="btn-send btn-cancel"
-              on:click={handleCancel}
-              title="Cancel"
+              class="btn-attach"
+              on:click|stopPropagation={openFilePicker}
+              disabled={disabled || loading}
+              title="Attach file"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M12 5v14M5 12h14" />
               </svg>
             </button>
-          {:else}
-            <button
-              class="btn-send"
-              on:click={handleSend}
-              disabled={!input.trim() || disabled}
-              title="Send"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M7 11l5-5m0 0l5 5m-5-5v12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          {/if}
+          </div>
+          <div class="workspace-input-bottom-right">
+            {#if loading}
+              <button
+                class="btn-send btn-cancel"
+                on:click={handleCancel}
+                title="Cancel"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>
+                </svg>
+              </button>
+            {:else}
+              <button
+                class="btn-send"
+                on:click={handleSend}
+                disabled={(!input.trim() && files.length === 0) || disabled}
+                title="Send"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M7 11l5-5m0 0l5 5m-5-5v12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            {/if}
+          </div>
         </div>
       </div>
+
+      <input
+        bind:this={fileInputEl}
+        type="file"
+        multiple
+        accept={ACCEPTED_TYPES}
+        on:change={handleFileSelect}
+        class="hidden-file-input"
+      />
     </footer>
   </div>
 
@@ -330,6 +505,10 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 40px 40px;
   }
 
   .workspace-scroll::-webkit-scrollbar {
@@ -379,6 +558,45 @@
     color: var(--text-primary);
     line-height: 1.5;
     word-wrap: break-word;
+  }
+
+  .user-pill-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+
+  .user-pill-file-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .user-pill-file-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .user-pill-file-icon {
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .user-pill-file-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
   }
 
   /* Summary Line */
@@ -696,15 +914,141 @@
     cursor: not-allowed;
   }
 
+  .workspace-input-container.drag-over {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+    background: rgba(14, 240, 216, 0.03);
+  }
+
   .workspace-input-bottom {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     padding: 4px 8px 8px;
   }
 
-  .workspace-input-spacer {
-    flex: 1;
+  .workspace-input-bottom-left {
+    display: flex;
+    align-items: center;
+  }
+
+  .workspace-input-bottom-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-attach {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+  }
+
+  .btn-attach:hover:not(:disabled) {
+    color: var(--text-secondary);
+    background: var(--bg-hover);
+  }
+
+  .btn-attach:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  /* ─── File Preview ─── */
+  .file-preview-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 14px 0;
+  }
+
+  .file-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 8px;
+    max-width: 220px;
+    animation: chipFadeIn 0.15s ease;
+  }
+
+  @keyframes chipFadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  .file-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .file-icon {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 4px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .file-name {
+    font-size: 12px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100px;
+  }
+
+  .file-size {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .file-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.1s ease;
+  }
+
+  .file-remove:hover {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.1);
+  }
+
+  .hidden-file-input {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
   }
 
   .btn-send {

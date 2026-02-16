@@ -510,6 +510,9 @@ export async function selectChat(sessionId) {
         role: m.role,
         content: m.content,
         steps: m.steps || [],
+        files: m.files && m.files.length > 0
+          ? m.files.map(f => ({ name: f.name, type: f.type }))
+          : undefined,
       }))
     );
 
