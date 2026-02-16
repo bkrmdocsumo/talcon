@@ -25,6 +25,7 @@ void SaveFocusedApp(void);
 void RestoreFocusedApp(void);
 int  CheckAccessibilityPermission(int promptUser);
 void PlayDictationSound(int soundType);
+void WarmUpAudioSystem(void);
 
 // Defined in overlay_darwin.m
 void PreCreateDictationOverlay(void);   // warm up — call once at startup
@@ -141,6 +142,7 @@ func SetupDictation(modifier string, cfgLoader func() (TranscribeConfig, error),
 	dictMu.Unlock()
 
 	C.SetHotkeyModifier(C.int(modCode))
+	C.WarmUpAudioSystem()         // pre-init CoreAudio so first sound doesn't crash
 	C.PreCreateDictationOverlay() // warm up NSPanel so first press is instant
 	C.StartHotkeyMonitor()
 

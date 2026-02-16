@@ -562,6 +562,26 @@ int CheckAccessibilityPermission(int promptUser) {
 // 3 = error           (Basso)
 // ═══════════════════════════════════════════════════════════════════════
 
+static BOOL audioSystemWarmedUp = NO;
+
+void WarmUpAudioSystem(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (audioSystemWarmedUp) return;
+        @try {
+            // Trigger CoreAudio HAL initialization by loading (but not playing)
+            // a system sound. This ensures the audio subsystem is ready before
+            // the first hotkey press, avoiding a cold-start crash if Info.plist
+            // keys are missing or the audio daemon is slow to respond.
+            NSSound *warmup = [NSSound soundNamed:@"Pop"];
+            (void)warmup;
+            audioSystemWarmedUp = YES;
+            NSLog(@"[dictation] audio system warmed up");
+        } @catch (NSException *e) {
+            NSLog(@"[dictation] audio warm-up failed: %@", e);
+        }
+    });
+}
+
 void PlayDictationSound(int soundType) {
     dispatch_async(dispatch_get_main_queue(), ^{
         NSString *soundName;
@@ -572,9 +592,13 @@ void PlayDictationSound(int soundType) {
             case 3: soundName = @"Basso"; break;
             default: return;
         }
-        NSSound *sound = [NSSound soundNamed:soundName];
-        if (sound) {
-            [sound play];
+        @try {
+            NSSound *sound = [NSSound soundNamed:soundName];
+            if (sound) {
+                [sound play];
+            }
+        } @catch (NSException *e) {
+            NSLog(@"[dictation] PlayDictationSound failed: %@", e);
         }
     });
 }
