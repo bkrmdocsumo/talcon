@@ -39,6 +39,10 @@
     showSnippetsPanel, hideSnippetsPanel,
   } from './lib/stores/snippetsStore.js';
 
+  import {
+    refreshPlugins,
+  } from './lib/stores/pluginsStore.js';
+
   // ─── Components ───
   import Sidebar from './components/Sidebar.svelte';
   import Header from './components/Header.svelte';
@@ -52,12 +56,14 @@
   import AgentWelcome from './components/AgentWelcome.svelte';
   import AgentWorkspace from './components/AgentWorkspace.svelte';
   import AgentFileCard from './components/AgentFileCard.svelte';
+  import PluginsPanel from './components/PluginsPanel.svelte';
 
   // ─── Local UI refs ───
   let chatContainer;
   let chatInputRef;
   let agentWelcomeRef;
   let userScrolledUp = false;
+  let prevTab = 'chat'; // tab to return to when closing plugins
 
   // ─── Lifecycle ───
   let statusPollTimer = null;
@@ -70,6 +76,7 @@
     await refreshAgentTaskHistory();
     await refreshTelegramChats();
     await refreshSnippets();
+    await refreshPlugins();
     chatInputRef?.focus();
 
     // Listen for hotkey dictation auto-saves so we can refresh the flow sidebar.
@@ -236,6 +243,18 @@
     deleteAgentTask(e.detail.id);
   }
 
+  // ─── Plugins event handlers ───
+
+  function handleOpenPlugins() {
+    const cur = $activeTab;
+    if (cur !== 'plugins') prevTab = cur;
+    activeTab.set('plugins');
+  }
+
+  function handleClosePlugins() {
+    activeTab.set(prevTab || 'chat');
+  }
+
   async function handleOpenFile(e) {
     const { path } = e.detail;
     if (!path) return;
@@ -268,6 +287,11 @@
   }
 </script>
 
+{#if $activeTab === 'plugins'}
+  <div class="plugins-fullscreen">
+    <PluginsPanel on:close={handleClosePlugins} />
+  </div>
+{:else}
 <div class="app">
   <Sidebar
     chatHistory={$chatHistory}
@@ -297,6 +321,7 @@
     on:deleteAgentTask={handleDeleteAgentTask}
     on:manageSnippets={handleManageSnippets}
     on:openSettings={() => showSettings.set(true)}
+    on:openPlugins={handleOpenPlugins}
   />
 
   <div class="main-panel">
@@ -427,6 +452,7 @@
     />
   {/if}
 </div>
+{/if}
 
 <style>
   .app {
@@ -532,5 +558,13 @@
     text-align: center;
     color: var(--text-muted);
     font-size: 14px;
+  }
+
+  /* ─── Plugins Fullscreen ─── */
+  .plugins-fullscreen {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-primary);
   }
 </style>

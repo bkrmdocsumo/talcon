@@ -13,6 +13,7 @@ import (
 
 	"github.com/user/talon/internal/agent"
 	"github.com/user/talon/internal/config"
+	"github.com/user/talon/internal/router"
 	"github.com/user/talon/internal/session"
 	"github.com/user/talon/internal/tools"
 	"github.com/user/talon/internal/util"
@@ -98,6 +99,7 @@ func (a *App) SendMessageStream(input string, sessionID string) error {
 	if !a.ready {
 		return fmt.Errorf("%s", a.initError)
 	}
+	commandBody := a.matchPluginCommand(input)
 	content, err := json.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("marshal input: %w", err)
@@ -106,7 +108,7 @@ func (a *App) SendMessageStream(input string, sessionID string) error {
 	if sid == "" {
 		sid = a.sessionID // fallback for backward compatibility
 	}
-	go a.runStream(sid, content, "", "chat:stream:event")
+	go a.runStream(sid, content, "", "chat:stream:event", commandBody)
 	return nil
 }
 
@@ -117,12 +119,13 @@ func (a *App) SendMessageStreamWithFiles(input string, files []FileAttachment, s
 	if !a.ready {
 		return fmt.Errorf("%s", a.initError)
 	}
+	commandBody := a.matchPluginCommand(input)
 	content := buildUserContent(input, files)
 	sid := sessionID
 	if sid == "" {
 		sid = a.sessionID // fallback for backward compatibility
 	}
-	go a.runStream(sid, content, "", "chat:stream:event")
+	go a.runStream(sid, content, "", "chat:stream:event", commandBody)
 	return nil
 }
 
@@ -133,7 +136,7 @@ func (a *App) SendMessageStreamWithFiles(input string, files []FileAttachment, s
 // of the default ~/.talon/sessions/{id}/.
 // eventName specifies the Wails event channel to emit on (e.g. "chat:stream:event"
 // or "agent:stream:event") so that chat and agent streams don't interfere.
-func (a *App) runStream(sessionID string, content json.RawMessage, workspaceDir string, eventName string) {
+func (a *App) runStream(sessionID string, content json.RawMessage, workspaceDir string, eventName string, commandBody ...string) {
 	// Create a cancellable child context for this stream.
 	streamCtx, cancel := context.WithCancel(a.ctx)
 	a.streamMu.Lock()
@@ -190,7 +193,14 @@ func (a *App) runStream(sessionID string, content json.RawMessage, workspaceDir 
 		streamCtx = tools.WithSessionDir(streamCtx, workspaceDir)
 	}
 
-	result, err := agent.RunAgentTurnStream(streamCtx, sessionID, content, a.agentCfg, a.deps, emit)
+	deps := a.deps
+	if len(commandBody) > 0 && commandBody[0] != "" {
+		deps.CommandBody = commandBody[0]
+	}
+	// Chat sessions (no custom workspaceDir) get concise replies;
+	// agent tasks get the full detailed style.
+	deps.ChatMode = (workspaceDir == "")
+	result, err := agent.RunAgentTurnStream(streamCtx, sessionID, content, a.agentCfg, deps, emit)
 	if err != nil {
 		seq++
 		wailsRuntime.EventsEmit(a.ctx, eventName, map[string]interface{}{
@@ -474,6 +484,26 @@ func (a *App) ListChatFiles(sessionID string) ([]TaskFileInfo, error) {
 	}
 
 	return files, nil
+}
+
+// matchPluginCommand checks if the input starts with a registered plugin
+// command and returns the command's markdown body. Returns empty string if no match.
+func (a *App) matchPluginCommand(input string) string {
+	cmdNames, err := a.ListCommandNames()
+	if err != nil || len(cmdNames) == 0 {
+		return ""
+	}
+	matched, _ := router.MatchPluginCommand(input, cmdNames)
+	if matched == "" {
+		return ""
+	}
+	body, err := a.GetCommandByName(matched)
+	if err != nil {
+		log.Printf("[plugins] failed to load command %s: %v", matched, err)
+		return ""
+	}
+	log.Printf("[plugins] matched command /%s", matched)
+	return body
 }
 
 // parseMessageForFrontend converts a stored session message to a simplified

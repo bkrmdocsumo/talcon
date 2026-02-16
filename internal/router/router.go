@@ -47,3 +47,24 @@ func StripCommand(message string) string {
 	}
 	return message
 }
+
+// MatchPluginCommand checks if the message starts with a registered
+// plugin command (e.g. "/brief daily" matches command "brief").
+// Returns the matched command name and the remaining message text,
+// or empty string if no command matched.
+func MatchPluginCommand(message string, commandNames []string) (matched string, rest string) {
+	trimmed := strings.TrimSpace(message)
+	if !strings.HasPrefix(trimmed, "/") {
+		return "", message
+	}
+	for _, name := range commandNames {
+		prefix := "/" + name
+		if trimmed == prefix {
+			return name, ""
+		}
+		if strings.HasPrefix(trimmed, prefix+" ") {
+			return name, strings.TrimSpace(trimmed[len(prefix)+1:])
+		}
+	}
+	return "", message
+}

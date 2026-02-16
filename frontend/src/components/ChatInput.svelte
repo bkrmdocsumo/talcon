@@ -1,6 +1,6 @@
 <script>
   import { tick, createEventDispatcher, onMount, onDestroy } from 'svelte';
-  import { StartVoiceRecording, StopVoiceAndTranscribe } from '../../wailsjs/go/main/App';
+  import { StartVoiceRecording, StopVoiceAndTranscribe, ListCommands } from '../../wailsjs/go/main/App';
   import { EventsOn } from '../../wailsjs/runtime/runtime';
 
   export let disabled = false;
@@ -10,6 +10,102 @@
   let textareaEl;
   let fileInputEl;
   let files = []; // { name, type, size, dataUrl, data }
+
+  // ─── Slash Command Autocomplete ───
+  let allCommands = [];
+  let showCommandMenu = false;
+  let commandQuery = '';
+  let commandHighlightIdx = 0;
+  let commandMenuEl;
+
+  $: filteredCommands = commandQuery
+    ? allCommands.filter(c =>
+        c.name.toLowerCase().includes(commandQuery.toLowerCase()) ||
+        (c.description || '').toLowerCase().includes(commandQuery.toLowerCase())
+      )
+    : allCommands;
+
+  $: if (filteredCommands.length > 0 && commandHighlightIdx >= filteredCommands.length) {
+    commandHighlightIdx = filteredCommands.length - 1;
+  }
+
+  async function loadCommands() {
+    try {
+      const cmds = await ListCommands();
+      allCommands = cmds || [];
+    } catch (e) {
+      allCommands = [];
+    }
+  }
+
+  function checkSlashCommand() {
+    const text = input;
+    if (text.startsWith('/')) {
+      const afterSlash = text.slice(1).split(/\s/)[0];
+      const hasSpace = /\s/.test(text.slice(1));
+      if (!hasSpace) {
+        commandQuery = afterSlash;
+        if (!showCommandMenu) {
+          commandHighlightIdx = 0;
+          loadCommands();
+        }
+        showCommandMenu = true;
+        return;
+      }
+    }
+    showCommandMenu = false;
+    commandQuery = '';
+  }
+
+  function selectCommand(cmd) {
+    const rest = input.startsWith('/') ? input.slice(1).replace(/^\S*/, '') : '';
+    input = '/' + cmd.name + ' ' + rest.trimStart();
+    showCommandMenu = false;
+    commandQuery = '';
+    tick().then(() => {
+      if (textareaEl) {
+        textareaEl.focus();
+        textareaEl.selectionStart = textareaEl.selectionEnd = input.length;
+      }
+    });
+  }
+
+  function handleCommandKeydown(e) {
+    if (!showCommandMenu || filteredCommands.length === 0) return false;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      commandHighlightIdx = (commandHighlightIdx + 1) % filteredCommands.length;
+      scrollCommandIntoView();
+      return true;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      commandHighlightIdx = (commandHighlightIdx - 1 + filteredCommands.length) % filteredCommands.length;
+      scrollCommandIntoView();
+      return true;
+    }
+    if (e.key === 'Tab' || e.key === 'Enter') {
+      e.preventDefault();
+      selectCommand(filteredCommands[commandHighlightIdx]);
+      return true;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      showCommandMenu = false;
+      return true;
+    }
+    return false;
+  }
+
+  function scrollCommandIntoView() {
+    tick().then(() => {
+      if (commandMenuEl) {
+        const active = commandMenuEl.querySelector('.cmd-option.highlighted');
+        if (active) active.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  }
 
   // Voice recording state
   let isRecording = false;
@@ -22,6 +118,7 @@
   let cleanupVoiceError = null;
 
   onMount(() => {
+    loadCommands();
     cleanupVoiceError = EventsOn('voice:error', (data) => {
       if (!data) return;
       voiceError = data.error || 'Recording error.';
@@ -88,6 +185,7 @@
   }
 
   function handleKeydown(e) {
+    if (handleCommandKeydown(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -98,6 +196,7 @@
     const el = e.target;
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+    checkSlashCommand();
   }
 
   function handleSend() {
@@ -167,10 +266,13 @@
     showModelMenu = !showModelMenu;
   }
 
-  // Close model menu on outside click
+  // Close menus on outside click
   function handleWindowClick(e) {
     if (showModelMenu) {
       showModelMenu = false;
+    }
+    if (showCommandMenu) {
+      showCommandMenu = false;
     }
   }
 
@@ -312,6 +414,26 @@
               </svg>
             </button>
           </div>
+        {/each}
+      </div>
+    {/if}
+
+    {#if showCommandMenu && filteredCommands.length > 0}
+      <div class="cmd-menu" bind:this={commandMenuEl} on:click|stopPropagation on:keydown|stopPropagation role="listbox">
+        {#each filteredCommands as cmd, i (cmd.id)}
+          <button
+            class="cmd-option"
+            class:highlighted={i === commandHighlightIdx}
+            on:click={() => selectCommand(cmd)}
+            on:mouseenter={() => commandHighlightIdx = i}
+            role="option"
+            aria-selected={i === commandHighlightIdx}
+          >
+            <span class="cmd-name">/{cmd.name}</span>
+            {#if cmd.description}
+              <span class="cmd-desc">{cmd.description}</span>
+            {/if}
+          </button>
         {/each}
       </div>
     {/if}
@@ -607,6 +729,67 @@
 
   .model-option.selected {
     color: var(--text-primary);
+  }
+
+  /* ─── Slash Command Autocomplete ─── */
+  .cmd-menu {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    margin-bottom: 6px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    padding: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    z-index: 60;
+    animation: menuFadeIn 0.12s ease;
+  }
+
+  .cmd-menu::-webkit-scrollbar { width: 4px; }
+  .cmd-menu::-webkit-scrollbar-track { background: transparent; }
+  .cmd-menu::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .cmd-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 12px;
+    background: none;
+    border: none;
+    border-radius: 7px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: all 0.1s ease;
+    text-align: left;
+  }
+
+  .cmd-option:hover,
+  .cmd-option.highlighted {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .cmd-name {
+    font-weight: 600;
+    color: var(--accent);
+    white-space: nowrap;
+    font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+    font-size: 12.5px;
+  }
+
+  .cmd-desc {
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* ─── Send Button ─── */

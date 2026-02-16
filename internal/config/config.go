@@ -58,6 +58,8 @@ func Bootstrap() (string, error) {
 		filepath.Join(base, "sessions"),
 		filepath.Join(base, "memory"),
 		filepath.Join(base, "flow"),
+		filepath.Join(base, "plugins", "commands"),
+		filepath.Join(base, "plugins", "skills"),
 	}
 	for _, d := range dirs {
 		if err := os.MkdirAll(d, 0o755); err != nil {
@@ -97,6 +99,19 @@ func Bootstrap() (string, error) {
 		data, _ := json.MarshalIndent(defaultApprovals, "", "  ")
 		if err := os.WriteFile(approvalsPath, data, 0o644); err != nil {
 			return "", fmt.Errorf("write exec-approvals.json: %w", err)
+		}
+	}
+
+	// Default plugins.json
+	pluginsPath := filepath.Join(base, "plugins.json")
+	if _, err := os.Stat(pluginsPath); os.IsNotExist(err) {
+		defaultPlugins := map[string]interface{}{
+			"commands": []interface{}{},
+			"skills":   []interface{}{},
+		}
+		data, _ := json.MarshalIndent(defaultPlugins, "", "  ")
+		if err := os.WriteFile(pluginsPath, data, 0o644); err != nil {
+			return "", fmt.Errorf("write plugins.json: %w", err)
 		}
 	}
 

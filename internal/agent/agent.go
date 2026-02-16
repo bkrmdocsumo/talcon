@@ -35,6 +35,16 @@ You MUST always save any code you produce as files using the write_file tool. NE
 - After writing files, you may still show key parts of the code in your response for explanation, but the file MUST exist.
 `
 
+// chatBrevitySuffix is appended to the system prompt for chat sessions to
+// keep responses short and conversational. Agent tasks get the full detailed
+// style instead.
+const chatBrevitySuffix = `
+
+## Response Style (IMPORTANT)
+
+Keep your responses **short and to the point**. Be concise — no lengthy explanations, preambles, or unnecessary detail. Answer directly. Use bullet points only when listing multiple items. If the user needs more detail, they will ask follow-up questions.
+`
+
 // todoPromptSuffix is appended to the system prompt to instruct the agent
 // to use the todo_write tool for task planning. This is injected
 // automatically so it works regardless of what the user has in Master_prompt.md.
@@ -71,6 +81,8 @@ type Deps struct {
 	LLMClient    llm.LLMClient
 	ToolRegistry *tools.Registry
 	BaseDir      string // ~/.talon path
+	CommandBody  string // optional plugin command context
+	ChatMode     bool   // true for chat sessions (concise replies), false for agent tasks (detailed)
 }
 
 // RunAgentTurn executes a full agent turn: sends user input to the LLM,
@@ -112,6 +124,21 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 	// Inject memory index into system prompt so the LLM knows what's available.
 	if memIdx := buildMemoryIndex(deps.BaseDir); memIdx != "" {
 		systemPrompt += memIdx
+	}
+
+	// Inject active plugin skills into the system prompt.
+	if skillCtx := loadSkillBodies(deps.BaseDir); skillCtx != "" {
+		systemPrompt += skillCtx
+	}
+
+	// Inject matched plugin command body if present.
+	if deps.CommandBody != "" {
+		systemPrompt += "\n\n## Active Command\n\nThe user invoked a custom command. Follow the instructions below:\n\n" + deps.CommandBody + "\n"
+	}
+
+	// Chat mode: keep replies concise. Agent mode: use detailed planning.
+	if deps.ChatMode {
+		systemPrompt += chatBrevitySuffix
 	}
 
 	// Always inject instructions to save code as files.
@@ -304,8 +331,22 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 		systemPrompt += memIdx
 	}
 
-	// Inject planning instructions so the agent always uses todo_write.
-	systemPrompt += todoPromptSuffix
+	// Inject active plugin skills into the system prompt.
+	if skillCtx := loadSkillBodies(deps.BaseDir); skillCtx != "" {
+		systemPrompt += skillCtx
+	}
+
+	// Inject matched plugin command body if present.
+	if deps.CommandBody != "" {
+		systemPrompt += "\n\n## Active Command\n\nThe user invoked a custom command. Follow the instructions below:\n\n" + deps.CommandBody + "\n"
+	}
+
+	// Chat mode: keep replies concise. Agent mode: use detailed planning.
+	if deps.ChatMode {
+		systemPrompt += chatBrevitySuffix
+	} else {
+		systemPrompt += todoPromptSuffix
+	}
 
 	// Always inject instructions to save code as files.
 	systemPrompt += agentCodeFileSuffix
@@ -546,4 +587,31 @@ func buildMemoryIndex(baseDir string) string {
 	}
 
 	return "\n\n## Available Memories\nThe following memories are stored. Use `memory_search` or `list_memories` to retrieve details.\n" + strings.Join(lines, "\n") + "\n"
+}
+
+// loadSkillBodies reads all skill .md files from ~/.talon/plugins/skills/
+// and returns their concatenated content for injection into the system prompt.
+func loadSkillBodies(baseDir string) string {
+	skillDir := filepath.Join(baseDir, "plugins", "skills")
+	pattern := filepath.Join(skillDir, "*.md")
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+	var bodies []string
+	for _, path := range matches {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Printf("[plugins] warning: failed to read skill %s: %v", path, err)
+			continue
+		}
+		content := strings.TrimSpace(string(data))
+		if content != "" {
+			bodies = append(bodies, content)
+		}
+	}
+	if len(bodies) == 0 {
+		return ""
+	}
+	return "\n\n## Active Skills\n\nThe following skills are available. Use them when relevant to the user's request.\n\n" + strings.Join(bodies, "\n\n---\n\n") + "\n"
 }
