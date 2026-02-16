@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/user/talon/internal/config"
 	"github.com/user/talon/internal/llm"
 )
 
@@ -64,13 +63,7 @@ func (r *Registry) AllDefs() []llm.ToolDef {
 // RegisterStandardTools registers all built-in tools (command, file, memory)
 // with the given registry. Browser tools are registered separately.
 func RegisterStandardTools(r *Registry, baseDir string) {
-	// Load exec approvals (use empty if missing).
-	approvals, err := config.LoadExecApprovals(baseDir)
-	if err != nil {
-		approvals = &config.ExecApprovals{}
-	}
-
-	r.Register(NewCommandTool(approvals))
+	r.Register(NewCommandTool(baseDir))
 	r.Register(&ReadFileTool{})
 	r.Register(&WriteFileTool{})
 
@@ -84,4 +77,11 @@ func RegisterStandardTools(r *Registry, baseDir string) {
 	r.Register(NewSandboxTool(runtimesDir))
 
 	r.Register(NewTodoWriteTool())
+
+	// PDF tools
+	r.Register(&ReadPDFTool{})
+	r.Register(&CreatePDFTool{})
+	r.Register(&PDFInfoTool{})
+	r.Register(&MergePDFTool{})
+	r.Register(&SplitPDFTool{})
 }

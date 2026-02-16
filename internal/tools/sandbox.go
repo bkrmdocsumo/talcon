@@ -40,8 +40,12 @@ func (t *SandboxTool) Schema() map[string]interface{} {
 				"type":        "string",
 				"description": "The source code to execute. For Go, must be a complete program with package main and func main().",
 			},
+			"filename": map[string]interface{}{
+				"type":        "string",
+				"description": "A short, descriptive filename for saving the code (e.g. 'generate_invoice.py', 'parse_data.js'). The extension should match the language. The code is automatically saved to the workspace with this name.",
+			},
 		},
-		"required": []string{"language", "code"},
+		"required": []string{"language", "code", "filename"},
 	}
 }
 
@@ -49,6 +53,7 @@ func (t *SandboxTool) Schema() map[string]interface{} {
 type sandboxInput struct {
 	Language string `json:"language"`
 	Code     string `json:"code"`
+	Filename string `json:"filename"`
 }
 
 func (t *SandboxTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {

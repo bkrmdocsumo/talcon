@@ -48,16 +48,12 @@
     { id: 'gpt-4o', label: 'GPT-4o', provider: 'openai' },
     { id: 'gpt-5.2', label: 'GPT-5.2', provider: 'openai' },
     { id: 'gpt-5-mini', label: 'GPT-5 Mini', provider: 'openai' },
-    { id: 'gemini-3-flash-preview', label: 'Gemini Flash', provider: 'gemini' },
-    { id: 'gemini-3-pro-preview', label: 'Gemini Pro', provider: 'gemini' },
   ];
 
   const dispatch = createEventDispatcher();
 
   // Only show models whose provider has a configured API key.
-  $: filteredModels = configuredProviders.length > 0
-    ? models.filter(m => configuredProviders.includes(m.provider))
-    : models;
+  $: filteredModels = models.filter(m => configuredProviders.includes(m.provider));
 
   // Auto-switch to the first available model if the current selection is no
   // longer in the filtered list (e.g. user removed an API key).

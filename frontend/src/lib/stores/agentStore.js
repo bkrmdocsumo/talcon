@@ -9,7 +9,7 @@ import {
   CancelStream,
   ListTaskFiles,
 } from '../../../wailsjs/go/main/App';
-import { EventsOn } from '../../../wailsjs/runtime/runtime';
+import { EventsOn, EventsOff } from '../../../wailsjs/runtime/runtime';
 
 // ─── Agent task state ───
 export const agentPhase = writable('welcome');       // 'welcome' | 'workspace'
@@ -28,6 +28,63 @@ export const agentIsStreaming = writable(false);
 let _agentStreamCleanup = null;
 let _agentCurrentThinkingIdx = -1;
 
+// Sequence-based dedup: the backend attaches a monotonically increasing `seq`
+// number to each event. Duplicates from the Wails macOS WebKit bridge carry
+// the same seq and are dropped.
+let _agentLastSeenSeq = 0;
+
+// ─── Background stream support ───
+// Caches state for agent sessions whose streams are still running but the user
+// has navigated away from.
+const _bgAgentStreams = new Map();
+// Map<sessionId, { messages, streamingIdx, currentThinkingIdx, lastSeenSeq,
+//   createdFiles, progressSteps, contextTools, taskTitle }>
+
+// Exported store: set of agent session IDs streaming in the background.
+export const backgroundAgentStreamingSessions = writable(new Set());
+
+// Whether the global agent event listener is currently registered.
+let _agentListenerRegistered = false;
+
+function ensureAgentListener() {
+  if (!_agentListenerRegistered) {
+    EventsOff('agent:stream:event');
+    if (_agentStreamCleanup) { _agentStreamCleanup(); _agentStreamCleanup = null; }
+    _agentStreamCleanup = EventsOn('agent:stream:event', handleAgentStreamEvent);
+    _agentListenerRegistered = true;
+  }
+}
+
+function cleanupAgentListenerIfNeeded() {
+  if (get(agentStreamingIdx) < 0 && _bgAgentStreams.size === 0) {
+    EventsOff('agent:stream:event');
+    if (_agentStreamCleanup) { _agentStreamCleanup(); _agentStreamCleanup = null; }
+    _agentListenerRegistered = false;
+  }
+}
+
+// Save current foreground agent streaming state into the background cache.
+function saveCurrentAgentToBackground() {
+  const currentId = get(activeAgentTaskId);
+  if (!currentId || !get(agentLoading)) return;
+  _bgAgentStreams.set(currentId, {
+    messages: get(agentMessages),
+    streamingIdx: get(agentStreamingIdx),
+    currentThinkingIdx: _agentCurrentThinkingIdx,
+    lastSeenSeq: _agentLastSeenSeq,
+    createdFiles: get(agentCreatedFiles),
+    progressSteps: get(agentProgressSteps),
+    contextTools: get(agentContextTools),
+    taskTitle: get(agentTaskTitle),
+  });
+  backgroundAgentStreamingSessions.update(s => { s.add(currentId); return new Set(s); });
+  // Reset foreground streaming indicators (backend keeps running).
+  agentStreamingIdx.set(-1);
+  agentLoading.set(false);
+  agentIsStreaming.set(false);
+  _agentCurrentThinkingIdx = -1;
+}
+
 // ─── Methods ───
 
 export async function refreshAgentTaskHistory() {
@@ -36,7 +93,7 @@ export async function refreshAgentTaskHistory() {
     agentTaskHistory.set(
       (sessions || []).map(s => ({
         id: s.id,
-        title: s.title || 'Untitled task',
+        title: s.title || 'Untitled',
         timestamp: s.timestamp,
       }))
     );
@@ -46,12 +103,26 @@ export async function refreshAgentTaskHistory() {
 }
 
 function handleAgentStreamEvent(data) {
-  // Ignore events from other sessions (prevents cross-talk when multiple streams run).
-  if (data.session_id && data.session_id !== get(activeAgentTaskId)) return;
+  const activeId = get(activeAgentTaskId);
+  const sessionId = data.session_id;
+
+  // Route events for background agent sessions to the background handler.
+  if (sessionId && sessionId !== activeId) {
+    if (_bgAgentStreams.has(sessionId)) {
+      handleBgAgentStreamEvent(sessionId, data);
+    }
+    return;
+  }
 
   if (!get(agentIsStreaming)) return;
   const idx = get(agentStreamingIdx);
   if (idx < 0) return;
+
+  // Sequence-based dedup: reject events with an already-seen seq number.
+  if (data.seq) {
+    if (data.seq <= _agentLastSeenSeq) return;
+    _agentLastSeenSeq = data.seq;
+  }
 
   agentMessages.update(msgs => {
     const updated = [...msgs];
@@ -107,6 +178,10 @@ function handleAgentStreamEvent(data) {
 
       case 'tool_result':
         msg.steps = [...(msg.steps || []), { type: 'tool_result', tool_name: data.tool_name, content: data.content }];
+        // Reset accumulated text so the next LLM iteration starts fresh.
+        // Without this, text from the previous iteration gets concatenated
+        // with text from the new iteration, causing visible repetition.
+        msg.content = '';
         break;
 
       case 'todo_update':
@@ -162,12 +237,116 @@ function handleAgentStreamEvent(data) {
   });
 }
 
-function finishAgentStream() {
-  if (_agentStreamCleanup) {
-    _agentStreamCleanup();
-    _agentStreamCleanup = null;
+// Handle stream events for agent sessions running in the background.
+function handleBgAgentStreamEvent(sessionId, data) {
+  const state = _bgAgentStreams.get(sessionId);
+  if (!state || state.streamingIdx < 0) return;
+
+  // Sequence-based dedup.
+  if (data.seq) {
+    if (data.seq <= state.lastSeenSeq) return;
+    state.lastSeenSeq = data.seq;
   }
 
+  const idx = state.streamingIdx;
+  const msg = { ...state.messages[idx] };
+  if (!msg) return;
+
+  switch (data.type) {
+    case 'thinking_start': {
+      const steps = [...(msg.steps || [])];
+      if (steps.length > 0 && steps[steps.length - 1].type === 'thinking') {
+        state.currentThinkingIdx = steps.length - 1;
+        steps[state.currentThinkingIdx] = { ...steps[state.currentThinkingIdx], content: steps[state.currentThinkingIdx].content + '\n\n' };
+      } else {
+        state.currentThinkingIdx = steps.length;
+        steps.push({ type: 'thinking', content: '' });
+      }
+      msg.steps = steps;
+      break;
+    }
+
+    case 'thinking':
+      if (state.currentThinkingIdx >= 0 && msg.steps[state.currentThinkingIdx]) {
+        const steps = [...msg.steps];
+        steps[state.currentThinkingIdx] = { ...steps[state.currentThinkingIdx], content: steps[state.currentThinkingIdx].content + data.content };
+        msg.steps = steps;
+      }
+      break;
+
+    case 'text':
+      msg.content = (msg.content || '') + data.content;
+      break;
+
+    case 'tool_call':
+      state.currentThinkingIdx = -1;
+      msg.steps = [...(msg.steps || []), { type: 'tool_call', tool_name: data.tool_name, tool_input: data.tool_input }];
+      if (data.tool_name !== 'todo_write') {
+        const toolLabel = formatToolName(data.tool_name);
+        if (!state.contextTools.includes(toolLabel)) {
+          state.contextTools = [...state.contextTools, toolLabel];
+        }
+      }
+      break;
+
+    case 'tool_result':
+      msg.steps = [...(msg.steps || []), { type: 'tool_result', tool_name: data.tool_name, content: data.content }];
+      msg.content = '';
+      break;
+
+    case 'todo_update':
+      if (data.todo_items && Array.isArray(data.todo_items)) {
+        state.progressSteps = data.todo_items.map(item => ({
+          id: item.id,
+          label: item.content,
+          status: item.status,
+        }));
+      }
+      return; // no message update
+
+    case 'file_created':
+      if (data.path) {
+        const fName = data.name || data.path.split('/').pop();
+        if (!state.createdFiles.find(f => f.path === data.path)) {
+          state.createdFiles.push({ name: fName, path: data.path });
+        }
+      }
+      return; // no message update
+
+    case 'done':
+      msg.role = 'assistant';
+      msg.content = data.final_text || msg.content;
+      msg.steps = data.steps || msg.steps;
+      delete msg.isStreaming;
+      state.messages[idx] = msg;
+      // Mark any remaining in_progress steps as completed.
+      state.progressSteps = state.progressSteps.map(s =>
+        s.status === 'in_progress' ? { ...s, status: 'completed' } : s
+      );
+      _bgAgentStreams.delete(sessionId);
+      backgroundAgentStreamingSessions.update(s => { s.delete(sessionId); return new Set(s); });
+      cleanupAgentListenerIfNeeded();
+      refreshAgentTaskHistory();
+      return;
+
+    case 'error':
+      msg.role = 'assistant';
+      msg.content = msg.content || `Something went wrong: ${data.error}`;
+      msg.steps = msg.steps || [];
+      msg.isError = true;
+      delete msg.isStreaming;
+      state.messages[idx] = msg;
+      _bgAgentStreams.delete(sessionId);
+      backgroundAgentStreamingSessions.update(s => { s.delete(sessionId); return new Set(s); });
+      cleanupAgentListenerIfNeeded();
+      refreshAgentTaskHistory();
+      return;
+  }
+
+  state.messages[idx] = msg;
+}
+
+function finishAgentStream() {
   const idx = get(agentStreamingIdx);
   if (idx >= 0) {
     agentMessages.update(msgs => {
@@ -183,6 +362,7 @@ function finishAgentStream() {
   agentLoading.set(false);
   _agentCurrentThinkingIdx = -1;
   agentStreamingIdx.set(-1);
+  cleanupAgentListenerIfNeeded();
   refreshAgentTaskHistory();
 }
 
@@ -195,6 +375,12 @@ export async function startAgentTask(text, readyFlag) {
   let title = text.trim();
   if (title.length > 50) title = title.substring(0, 50) + '...';
   agentTaskTitle.set(title);
+
+  // Immediately show the new task with its title in the sidebar.
+  agentTaskHistory.update(history => [
+    { id: newId, title, timestamp: Date.now() },
+    ...history,
+  ]);
 
   agentMessages.set([
     { role: 'user', content: text },
@@ -209,10 +395,15 @@ export async function startAgentTask(text, readyFlag) {
   _agentCurrentThinkingIdx = -1;
   agentPhase.set('workspace');
 
-  _agentStreamCleanup = EventsOn('agent:stream:event', handleAgentStreamEvent);
+  // Reset sequence counter for the new stream.
+  _agentLastSeenSeq = 0;
+
+  // Ensure the global agent event listener is registered.
+  ensureAgentListener();
 
   try {
-    await SendAgentTaskStream(text);
+    const sid = get(activeAgentTaskId);
+    await SendAgentTaskStream(text, sid);
   } catch (err) {
     agentMessages.update(msgs => {
       const updated = [...msgs];
@@ -241,10 +432,15 @@ export async function sendAgentFollowUp(text, readyFlag) {
   agentIsStreaming.set(true);
   _agentCurrentThinkingIdx = -1;
 
-  _agentStreamCleanup = EventsOn('agent:stream:event', handleAgentStreamEvent);
+  // Reset sequence counter for the new stream.
+  _agentLastSeenSeq = 0;
+
+  // Ensure the global agent event listener is registered.
+  ensureAgentListener();
 
   try {
-    await SendAgentTaskStream(text);
+    const sid = get(activeAgentTaskId);
+    await SendAgentTaskStream(text, sid);
   } catch (err) {
     agentMessages.update(msgs => {
       const updated = [...msgs];
@@ -268,6 +464,9 @@ export async function cancelAgent() {
 }
 
 export function newAgentTask() {
+  // If the current task is streaming, move it to the background.
+  saveCurrentAgentToBackground();
+
   agentPhase.set('welcome');
   agentTaskTitle.set('');
   agentMessages.set([]);
@@ -281,9 +480,33 @@ export function newAgentTask() {
 }
 
 export async function selectAgentTask(sessionId) {
-  if (get(agentLoading)) return;
   if (sessionId === get(activeAgentTaskId) && get(agentPhase) === 'workspace') return;
 
+  // If the current task is streaming, move it to the background.
+  saveCurrentAgentToBackground();
+
+  // If the target session is streaming in the background, restore it.
+  if (_bgAgentStreams.has(sessionId)) {
+    const state = _bgAgentStreams.get(sessionId);
+    _bgAgentStreams.delete(sessionId);
+    backgroundAgentStreamingSessions.update(s => { s.delete(sessionId); return new Set(s); });
+
+    activeAgentTaskId.set(sessionId);
+    agentMessages.set(state.messages);
+    agentStreamingIdx.set(state.streamingIdx);
+    _agentCurrentThinkingIdx = state.currentThinkingIdx;
+    _agentLastSeenSeq = state.lastSeenSeq;
+    agentCreatedFiles.set(state.createdFiles);
+    agentProgressSteps.set(state.progressSteps);
+    agentContextTools.set(state.contextTools);
+    agentTaskTitle.set(state.taskTitle);
+    agentLoading.set(state.streamingIdx >= 0);
+    agentIsStreaming.set(state.streamingIdx >= 0);
+    agentPhase.set('workspace');
+    return;
+  }
+
+  // Otherwise load from the backend.
   try {
     const loaded = await LoadSession(sessionId);
     activeAgentTaskId.set(sessionId);
@@ -359,6 +582,14 @@ export async function selectAgentTask(sessionId) {
 
 export async function deleteAgentTask(sessionId) {
   try {
+    // If the session has a background stream, cancel it.
+    if (_bgAgentStreams.has(sessionId)) {
+      try { await CancelStream(sessionId); } catch (_) {}
+      _bgAgentStreams.delete(sessionId);
+      backgroundAgentStreamingSessions.update(s => { s.delete(sessionId); return new Set(s); });
+      cleanupAgentListenerIfNeeded();
+    }
+
     await DeleteSession(sessionId);
     if (sessionId === get(activeAgentTaskId)) {
       newAgentTask();

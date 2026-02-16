@@ -269,7 +269,7 @@ func (m *Manager) ListTelegramSessions() ([]SessionInfo, error) {
 
 		// Use the Telegram user ID as a subtitle hint.
 		userID := strings.TrimPrefix(sessionID, "tg_")
-		if title == "Untitled chat" {
+		if title == "Untitled" {
 			title = "Telegram user " + userID
 		}
 
@@ -350,7 +350,7 @@ func (m *Manager) DeleteSession(sessionID string) error {
 func extractTitle(path string) string {
 	f, err := os.Open(path)
 	if err != nil {
-		return "Untitled chat"
+		return "Untitled"
 	}
 	defer f.Close()
 
@@ -375,7 +375,7 @@ func extractTitle(path string) string {
 		return text
 	}
 
-	return "Untitled chat"
+	return "Untitled"
 }
 
 // ExtractTextFromContent extracts plain text from a message content field.

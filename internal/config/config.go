@@ -11,7 +11,7 @@ import (
 type AgentConfig struct {
 	Name           string `json:"name"`
 	Model          string `json:"model"`
-	SoulPath       string `json:"soul_path"`
+	PromptPath     string `json:"prompt_path"`
 	SessionPrefix  string `json:"session_prefix"`
 	EnableThinking bool   `json:"enable_thinking"`
 }
@@ -75,7 +75,7 @@ func Bootstrap() (string, error) {
 			"main": {
 				Name:           "Talon",
 				Model:          "claude-sonnet-4-5-20250929",
-				SoulPath:       "workspace/SOUL.md",
+				PromptPath:     "workspace/Master_prompt.md",
 				SessionPrefix:  "agent_main",
 				EnableThinking: true,
 			},
@@ -100,10 +100,10 @@ func Bootstrap() (string, error) {
 		}
 	}
 
-	// Default SOUL.md
-	soulPath := filepath.Join(base, "workspace", "SOUL.md")
-	if _, err := os.Stat(soulPath); os.IsNotExist(err) {
-		soul := `# Talon — System Prompt
+	// Default Master_prompt.md
+	promptPath := filepath.Join(base, "workspace", "Master_prompt.md")
+	if _, err := os.Stat(promptPath); os.IsNotExist(err) {
+		prompt := `# Talon — System Prompt
 
 You are Talon, a helpful and capable AI assistant running locally on the user's machine.
 
@@ -181,8 +181,8 @@ Keep plan items concise and specific (e.g. "Create database schema for users tab
 
 Be concise but thorough. When using tools, explain what you are doing and why. If a tool fails, analyse the error and retry with a corrected approach.
 `
-		if err := os.WriteFile(soulPath, []byte(soul), 0o644); err != nil {
-			return "", fmt.Errorf("write SOUL.md: %w", err)
+		if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {
+			return "", fmt.Errorf("write Master_prompt.md: %w", err)
 		}
 	}
 
@@ -247,4 +247,17 @@ func LoadExecApprovals(base string) (*ExecApprovals, error) {
 		return nil, fmt.Errorf("decode exec-approvals.json: %w", err)
 	}
 	return &approvals, nil
+}
+
+// SaveExecApprovals writes the allowed/blocked command lists to exec-approvals.json.
+func SaveExecApprovals(base string, approvals *ExecApprovals) error {
+	path := filepath.Join(base, "exec-approvals.json")
+	data, err := json.MarshalIndent(approvals, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal exec-approvals: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write exec-approvals.json: %w", err)
+	}
+	return nil
 }

@@ -1,6 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { GetSettings, SaveSettings, GetStatus, GetDictationStatus, RequestAccessibility } from '../../wailsjs/go/main/App';
+  import { GetSettings, SaveSettings, GetStatus, GetDictationStatus, RequestAccessibility, GetExecApprovals, SaveExecApprovals } from '../../wailsjs/go/main/App';
 
   export let telegramStatus = 'stopped';
 
@@ -19,7 +19,13 @@
   let settingsHotkeyModifier = 'left_option';
   let dictationAccessibility = false;
 
-  let activeTab = 'general'; // 'general' | 'voice'
+  // Command approvals state
+  let allowedCommands = [];
+  let blockedCommands = [];
+  let newAllowedCmd = '';
+  let newBlockedCmd = '';
+
+  let activeTab = 'general'; // 'general' | 'voice' | 'commands'
 
   const dispatch = createEventDispatcher();
 
@@ -40,6 +46,13 @@
       settingsHotkeyEnabled = s.hotkey_enabled || false;
       settingsHotkeyModifier = s.hotkey_modifier || 'right_option';
 
+      // Load exec approvals (allowed/blocked commands).
+      try {
+        const approvals = await GetExecApprovals();
+        allowedCommands = approvals.allowed || [];
+        blockedCommands = approvals.blocked || [];
+      } catch (_) {}
+
       // Check dictation accessibility permission status.
       try {
         const dictStatus = await GetDictationStatus();
@@ -54,6 +67,44 @@
 
   function close() {
     dispatch('close');
+  }
+
+  function addAllowedCmd() {
+    const cmd = newAllowedCmd.trim();
+    if (cmd && !allowedCommands.includes(cmd)) {
+      allowedCommands = [...allowedCommands, cmd];
+      newAllowedCmd = '';
+    }
+  }
+
+  function removeAllowedCmd(index) {
+    allowedCommands = allowedCommands.filter((_, i) => i !== index);
+  }
+
+  function addBlockedCmd() {
+    const cmd = newBlockedCmd.trim();
+    if (cmd && !blockedCommands.includes(cmd)) {
+      blockedCommands = [...blockedCommands, cmd];
+      newBlockedCmd = '';
+    }
+  }
+
+  function removeBlockedCmd(index) {
+    blockedCommands = blockedCommands.filter((_, i) => i !== index);
+  }
+
+  function handleAllowedKeydown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addAllowedCmd();
+    }
+  }
+
+  function handleBlockedKeydown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addBlockedCmd();
+    }
   }
 
   async function save() {
@@ -72,6 +123,13 @@
         hotkey_enabled: settingsHotkeyEnabled,
         hotkey_modifier: settingsHotkeyModifier,
       });
+
+      // Save exec approvals alongside main settings.
+      await SaveExecApprovals({
+        allowed: allowedCommands,
+        blocked: blockedCommands,
+      });
+
       settingsSuccess = 'Settings saved successfully!';
 
       // Re-check app status in case the key was missing before.
@@ -129,7 +187,15 @@
           on:click={() => activeTab = 'voice'}
           type="button"
         >
-          Voice / Speech-to-Text
+          Voice / STT
+        </button>
+        <button
+          class="tab-btn"
+          class:tab-active={activeTab === 'commands'}
+          on:click={() => activeTab = 'commands'}
+          type="button"
+        >
+          Commands
         </button>
       </div>
 
@@ -316,6 +382,89 @@
               </p>
             {/if}
           </div>
+        {/if}
+
+        <!-- ─── Commands Tab ─── -->
+        {#if activeTab === 'commands'}
+          <div class="commands-section">
+            <h3 class="section-title">Allowed Commands</h3>
+            <p class="section-desc">
+              Command prefixes the agent is allowed to run via <code>run_command</code>.
+              If a command doesn't start with one of these prefixes, it will be blocked.
+            </p>
+
+            <div class="cmd-list">
+              {#each allowedCommands as cmd, i}
+                <div class="cmd-chip">
+                  <span class="cmd-chip-text">{cmd}</span>
+                  <button
+                    class="cmd-chip-remove"
+                    on:click={() => removeAllowedCmd(i)}
+                    title="Remove"
+                    type="button"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+              {/each}
+            </div>
+
+            <div class="cmd-add-row">
+              <input
+                type="text"
+                class="field-input cmd-add-input"
+                bind:value={newAllowedCmd}
+                on:keydown={handleAllowedKeydown}
+                placeholder="e.g. npm, docker, python..."
+                spellcheck="false"
+              />
+              <button class="btn-action-sm" on:click={addAllowedCmd} type="button">Add</button>
+            </div>
+          </div>
+
+          <div class="commands-section">
+            <h3 class="section-title">Blocked Patterns</h3>
+            <p class="section-desc">
+              Command patterns that are always blocked, even if they match an allowed prefix.
+              Use these as a safety net for dangerous commands.
+            </p>
+
+            <div class="cmd-list">
+              {#each blockedCommands as cmd, i}
+                <div class="cmd-chip cmd-chip-blocked">
+                  <span class="cmd-chip-text">{cmd}</span>
+                  <button
+                    class="cmd-chip-remove"
+                    on:click={() => removeBlockedCmd(i)}
+                    title="Remove"
+                    type="button"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </div>
+              {/each}
+            </div>
+
+            <div class="cmd-add-row">
+              <input
+                type="text"
+                class="field-input cmd-add-input"
+                bind:value={newBlockedCmd}
+                on:keydown={handleBlockedKeydown}
+                placeholder="e.g. rm -rf /, mkfs..."
+                spellcheck="false"
+              />
+              <button class="btn-action-sm" on:click={addBlockedCmd} type="button">Add</button>
+            </div>
+          </div>
+
+          <p class="field-hint" style="margin-top: 8px;">
+            Changes are saved to <code>~/.talon/exec-approvals.json</code> and take effect immediately.
+          </p>
         {/if}
       </div>
 
@@ -798,5 +947,102 @@
 
   .tg-badge-dot-active {
     background: #4ade80;
+  }
+
+  /* ─── Commands Tab ─── */
+  .commands-section {
+    margin-bottom: 20px;
+  }
+
+  .commands-section:last-of-type {
+    margin-bottom: 0;
+  }
+
+  .commands-section .section-title {
+    margin-top: 0;
+  }
+
+  .commands-section .section-desc {
+    margin-bottom: 10px;
+  }
+
+  .commands-section .section-desc code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--bg-primary);
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  .cmd-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+    min-height: 28px;
+  }
+
+  .cmd-chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px 4px 10px;
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: #4ade80;
+    transition: all 0.15s ease;
+  }
+
+  .cmd-chip:hover {
+    background: rgba(34, 197, 94, 0.14);
+  }
+
+  .cmd-chip-blocked {
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+  }
+
+  .cmd-chip-blocked:hover {
+    background: rgba(239, 68, 68, 0.14);
+  }
+
+  .cmd-chip-text {
+    line-height: 1;
+  }
+
+  .cmd-chip-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    color: inherit;
+    opacity: 0.5;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+
+  .cmd-chip-remove:hover {
+    opacity: 1;
+  }
+
+  .cmd-add-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .cmd-add-input {
+    flex: 1;
+    font-family: var(--font-mono) !important;
   }
 </style>

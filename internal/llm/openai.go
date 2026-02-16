@@ -63,9 +63,25 @@ type oaiImageURL struct {
 }
 
 type oaiToolCall struct {
-	ID       string          `json:"id"`
-	Type     string          `json:"type"`
-	Function oaiToolFunction `json:"function"`
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function oaiToolFunction  `json:"function"`
+	Google   *oaiGoogleExt    `json:"google,omitempty"` // Gemini thought signatures for function calls
+}
+
+// oaiGoogleExt holds Gemini-specific extensions returned by Google's
+// OpenAI-compatible endpoint (nested under a "google" key on each tool call).
+type oaiGoogleExt struct {
+	ThoughtSignature string `json:"thought_signature,omitempty"`
+}
+
+// getThoughtSignature extracts the thought signature from the Google
+// extension wrapper, returning an empty string if absent.
+func (tc *oaiToolCall) getThoughtSignature() string {
+	if tc.Google != nil && tc.Google.ThoughtSignature != "" {
+		return tc.Google.ThoughtSignature
+	}
+	return ""
 }
 
 type oaiToolFunction struct {
@@ -230,14 +246,19 @@ func (c *OpenAIClient) convertAssistantMessage(msg session.Message) []oaiMessage
 			name, _ := block["name"].(string)
 			input := block["input"]
 			inputBytes, _ := json.Marshal(input)
-			toolCalls = append(toolCalls, oaiToolCall{
+			thoughtSig, _ := block["thought_signature"].(string)
+			tc := oaiToolCall{
 				ID:   id,
 				Type: "function",
 				Function: oaiToolFunction{
 					Name:      name,
 					Arguments: string(inputBytes),
 				},
-			})
+			}
+			if thoughtSig != "" {
+				tc.Google = &oaiGoogleExt{ThoughtSignature: thoughtSig}
+			}
+			toolCalls = append(toolCalls, tc)
 		// "thinking" blocks are skipped — OpenAI doesn't have an equivalent.
 		}
 	}
@@ -347,10 +368,11 @@ func (c *OpenAIClient) parseResponse(body []byte) (*Response, error) {
 
 		for _, tc := range choice.Message.ToolCalls {
 			result.Content = append(result.Content, ContentBlock{
-				Type:  "tool_use",
-				ID:    tc.ID,
-				Name:  tc.Function.Name,
-				Input: json.RawMessage(tc.Function.Arguments),
+				Type:             "tool_use",
+				ID:               tc.ID,
+				Name:             tc.Function.Name,
+				Input:            json.RawMessage(tc.Function.Arguments),
+				ThoughtSignature: tc.getThoughtSignature(),
 			})
 		}
 	}
@@ -417,6 +439,7 @@ func (c *OpenAIClient) parseStreamResponse(body io.Reader, onDelta func(StreamDe
 	var textContent string
 	var toolCalls []oaiToolCall
 	toolArgBuilders := map[int]string{}
+	thoughtSigBuilders := map[int]string{}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -434,17 +457,20 @@ func (c *OpenAIClient) parseStreamResponse(body io.Reader, onDelta func(StreamDe
 			ID      string `json:"id"`
 			Choices []struct {
 				Delta struct {
-					Role      string `json:"role"`
+					Role      string  `json:"role"`
 					Content   *string `json:"content"`
-					ToolCalls []struct {
-						Index    int    `json:"index"`
-						ID       string `json:"id,omitempty"`
-						Type     string `json:"type,omitempty"`
-						Function struct {
-							Name      string `json:"name,omitempty"`
-							Arguments string `json:"arguments,omitempty"`
-						} `json:"function"`
-					} `json:"tool_calls"`
+				ToolCalls []struct {
+					Index    int    `json:"index"`
+					ID       string `json:"id,omitempty"`
+					Type     string `json:"type,omitempty"`
+					Function struct {
+						Name      string `json:"name,omitempty"`
+						Arguments string `json:"arguments,omitempty"`
+					} `json:"function"`
+					Google *struct {
+						ThoughtSignature string `json:"thought_signature,omitempty"`
+					} `json:"google,omitempty"`
+				} `json:"tool_calls"`
 				} `json:"delta"`
 				FinishReason *string `json:"finish_reason"`
 			} `json:"choices"`
@@ -499,6 +525,10 @@ func (c *OpenAIClient) parseStreamResponse(body io.Reader, onDelta func(StreamDe
 			if tc.Function.Arguments != "" {
 				toolArgBuilders[idx] += tc.Function.Arguments
 			}
+
+			if tc.Google != nil && tc.Google.ThoughtSignature != "" {
+				thoughtSigBuilders[idx] += tc.Google.ThoughtSignature
+			}
 		}
 
 		// Finish reason.
@@ -522,10 +552,11 @@ func (c *OpenAIClient) parseStreamResponse(body io.Reader, onDelta func(StreamDe
 	for idx, tc := range toolCalls {
 		args := toolArgBuilders[idx]
 		result.Content = append(result.Content, ContentBlock{
-			Type:  "tool_use",
-			ID:    tc.ID,
-			Name:  tc.Function.Name,
-			Input: json.RawMessage(args),
+			Type:             "tool_use",
+			ID:               tc.ID,
+			Name:             tc.Function.Name,
+			Input:            json.RawMessage(args),
+			ThoughtSignature: thoughtSigBuilders[idx],
 		})
 	}
 

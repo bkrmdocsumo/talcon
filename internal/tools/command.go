@@ -18,13 +18,17 @@ const (
 )
 
 // CommandTool executes shell commands with approval checks.
+// It re-reads exec-approvals.json on every execution so that changes
+// made via the Settings UI (or manual edits) take effect immediately
+// without requiring a restart.
 type CommandTool struct {
-	approvals *config.ExecApprovals
+	baseDir string
 }
 
-// NewCommandTool creates a run_command tool using the given approval config.
-func NewCommandTool(approvals *config.ExecApprovals) *CommandTool {
-	return &CommandTool{approvals: approvals}
+// NewCommandTool creates a run_command tool that reads approval config
+// from the given base directory on each execution.
+func NewCommandTool(baseDir string) *CommandTool {
+	return &CommandTool{baseDir: baseDir}
 }
 
 func (t *CommandTool) Name() string { return "run_command" }
@@ -61,8 +65,15 @@ func (t *CommandTool) Execute(ctx context.Context, input json.RawMessage) (strin
 		return "Error: command is empty", nil
 	}
 
+	// Load approvals fresh from disk so that changes made in Settings
+	// or by manually editing exec-approvals.json take effect immediately.
+	approvals, err := config.LoadExecApprovals(t.baseDir)
+	if err != nil {
+		approvals = &config.ExecApprovals{}
+	}
+
 	// Check blocked patterns (hard block).
-	for _, blocked := range t.approvals.Blocked {
+	for _, blocked := range approvals.Blocked {
 		if strings.Contains(in.Command, blocked) {
 			return fmt.Sprintf("Error: command blocked for safety — contains %q", blocked), nil
 		}
@@ -72,7 +83,7 @@ func (t *CommandTool) Execute(ctx context.Context, input json.RawMessage) (strin
 	allowed := false
 	cmdParts := strings.Fields(in.Command)
 	if len(cmdParts) > 0 {
-		for _, prefix := range t.approvals.Allowed {
+		for _, prefix := range approvals.Allowed {
 			if cmdParts[0] == prefix || strings.HasPrefix(in.Command, prefix) {
 				allowed = true
 				break
@@ -80,7 +91,7 @@ func (t *CommandTool) Execute(ctx context.Context, input json.RawMessage) (strin
 		}
 	}
 	if !allowed {
-		return fmt.Sprintf("Error: command %q is not in the approval allowlist. Add it to exec-approvals.json to permit execution.", cmdParts[0]), nil
+		return fmt.Sprintf("Error: command %q is not in the approval allowlist. Add it to exec-approvals.json or go to Settings → Commands to permit execution.", cmdParts[0]), nil
 	}
 
 	// Execute with timeout.
@@ -92,7 +103,7 @@ func (t *CommandTool) Execute(ctx context.Context, input json.RawMessage) (strin
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 
-	err := cmd.Run()
+	err = cmd.Run()
 
 	output := out.String()
 	if len(output) > maxOutputBytes {

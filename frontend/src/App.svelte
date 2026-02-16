@@ -10,6 +10,7 @@
     telegramStatus, telegramToggling, showSettings,
     chatCreatedFiles, configuredProviders,
     telegramChats, activeTelegramChatId, telegramMessages, viewingTelegram,
+    backgroundStreamingSessions,
     applyStatus, checkBackendStatus, refreshChatHistory,
     sendMessage, cancelStream, newSession, selectChat, deleteChat,
     toggleTelegram, changeModel,
@@ -21,6 +22,7 @@
     agentTaskTitle, agentMessages, agentProgressSteps,
     agentCreatedFiles, agentContextTools, agentLoading,
     agentIsStreaming,
+    backgroundAgentStreamingSessions,
     refreshAgentTaskHistory, startAgentTask, sendAgentFollowUp,
     cancelAgent, newAgentTask, selectAgentTask, deleteAgentTask,
   } from './lib/stores/agentStore.js';
@@ -270,6 +272,8 @@
     telegramStatus={$telegramStatus}
     snippets={$snippets}
     managingSnippets={$managingSnippets}
+    bgStreamingChats={$backgroundStreamingSessions}
+    bgStreamingAgents={$backgroundAgentStreamingSessions}
     on:newChat={handleNewSession}
     on:selectChat={handleSelectChat}
     on:deleteChat={handleDeleteChat}

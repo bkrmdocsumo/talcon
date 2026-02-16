@@ -38,10 +38,14 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
+	anthropicSrc := "config.json"
 	if cfg.AnthropicKey == "" {
 		cfg.AnthropicKey = os.Getenv("ANTHROPIC_API_KEY")
+		anthropicSrc = "env"
 	}
-	if cfg.AnthropicKey == "" {
+	if cfg.AnthropicKey != "" {
+		log.Printf("Anthropic API key loaded from %s", anthropicSrc)
+	} else {
 		log.Fatal("No Anthropic API key. Set 'anthropic_key' in config.json or ANTHROPIC_API_KEY env var.")
 	}
 
@@ -58,13 +62,23 @@ func main() {
 
 	// Resolve OpenAI key for GPT models.
 	openaiKey := cfg.OpenAIKey
+	openaiSrc := "config.json"
 	if openaiKey == "" {
 		openaiKey = os.Getenv("OPENAI_API_KEY")
+		openaiSrc = "env"
+	}
+	if openaiKey != "" {
+		log.Printf("OpenAI API key loaded from %s", openaiSrc)
 	}
 	// Resolve Gemini key for Gemini models.
 	geminiKey := cfg.GeminiKey
+	geminiSrc := "config.json"
 	if geminiKey == "" {
 		geminiKey = os.Getenv("GEMINI_API_KEY")
+		geminiSrc = "env"
+	}
+	if geminiKey != "" {
+		log.Printf("Gemini API key loaded from %s", geminiSrc)
 	}
 
 	// Initialise core components.

@@ -33,7 +33,7 @@ func Route(message string, cfg *config.Config) config.AgentConfig {
 	return config.AgentConfig{
 		Name:          "Talon",
 		Model:         "claude-sonnet-4-5-20250929",
-		SoulPath:      "workspace/SOUL.md",
+		PromptPath:    "workspace/Master_prompt.md",
 		SessionPrefix: "agent_main",
 	}
 }

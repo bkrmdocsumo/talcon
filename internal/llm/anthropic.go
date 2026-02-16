@@ -36,13 +36,14 @@ type ThinkingConfig struct {
 
 // ContentBlock represents a single block in the response content array.
 type ContentBlock struct {
-	Type      string          `json:"type"`               // "text", "tool_use", or "thinking"
-	Text      string          `json:"text,omitempty"`     // populated when type == "text"
-	Thinking  string          `json:"thinking,omitempty"` // populated when type == "thinking"
-	Signature string          `json:"signature,omitempty"` // required for thinking blocks in conversation history
-	ID        string          `json:"id,omitempty"`       // tool_use id
-	Name      string          `json:"name,omitempty"`     // tool name
-	Input     json.RawMessage `json:"input,omitempty"`    // tool input JSON
+	Type             string          `json:"type"`                          // "text", "tool_use", or "thinking"
+	Text             string          `json:"text,omitempty"`                // populated when type == "text"
+	Thinking         string          `json:"thinking,omitempty"`            // populated when type == "thinking"
+	Signature        string          `json:"signature,omitempty"`           // required for thinking blocks in conversation history
+	ID               string          `json:"id,omitempty"`                  // tool_use id
+	Name             string          `json:"name,omitempty"`                // tool name
+	Input            json.RawMessage `json:"input,omitempty"`               // tool input JSON
+	ThoughtSignature string          `json:"thought_signature,omitempty"`   // Gemini: required for function calls with thinking
 }
 
 // Response is the parsed Anthropic Messages API response.

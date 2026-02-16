@@ -5,9 +5,9 @@
 **A local AI assistant that lives on your Mac.**
 
 Chat through a native desktop app, the terminal, an HTTP API, or Telegram.
-Powered by Claude with tools for shell commands, file access, web browsing, code execution, and persistent memory.
+Powered by Claude, GPT, and Gemini — with tools for shell commands, file access, web browsing, code execution, and persistent memory.
 
-[Getting Started](#getting-started) · [Features](#features) · [Configuration](#configuration) · [Architecture](#architecture)
+[Getting Started](#getting-started) · [Features](#features) · [Commands](#commands) · [Troubleshooting](#troubleshooting) · [Configuration](#configuration) · [Architecture](#architecture)
 
 </div>
 
@@ -38,8 +38,10 @@ The agent can autonomously use tools to accomplish tasks:
 ### Voice & Dictation
 
 - **Push-to-talk dictation** — Hold a modifier key to record, release to transcribe and paste anywhere on your Mac
+- **Double-tap grammar fix** — Double-tap the modifier key to fix grammar, spelling, and punctuation of selected text via LLM (uses `gpt-4o-mini`)
 - **Voice recording** — Record and transcribe audio directly in the app
 - **Transcription providers** — OpenAI Whisper / GPT-4o Transcribe or Deepgram Nova-2
+- **Snippet expansion** — Define trigger phrases that auto-expand to full text during dictation (e.g., "my email" → "john@example.com")
 - **Menu bar indicator** — Waveform icon shows recording/transcription state
 - **Flow history** — All voice transcriptions are saved and browsable in the Flow tab
 
@@ -55,8 +57,8 @@ A dedicated workspace mode for complex, multi-step tasks:
 ### Other
 
 - **Session management** — Multiple conversation threads with full history
-- **Customisable personality** — Edit `SOUL.md` in `~/.talon/workspace/` to change how the agent behaves
-- **Multi-model support** — Switch between Claude (Anthropic) and GPT (OpenAI) models from the UI
+- **Customisable personality** — Edit `Master_prompt.md` in `~/.talon/workspace/` to change how the agent behaves
+- **Multi-model support** — Switch between Claude (Anthropic), GPT (OpenAI), and Gemini (Google) models from the UI; provider is auto-detected from the model name
 - **Scheduled tasks** — Cron-based automation (e.g., morning briefings)
 - **Streaming responses** — Real-time text and thinking-block streaming
 - **Extended thinking** — See the agent's reasoning process as it works
@@ -73,7 +75,7 @@ A dedicated workspace mode for complex, multi-step tasks:
 | **Go 1.24+** | [golang.org/dl](https://golang.org/dl/) |
 | **Node.js + npm** | For the Svelte frontend |
 | **Wails v2** | [wails.io](https://wails.io/) |
-| **Anthropic API key** | [console.anthropic.com](https://console.anthropic.com/) |
+| **LLM API key** | At least one of: [Anthropic](https://console.anthropic.com/), [OpenAI](https://platform.openai.com/), or [Google Gemini](https://ai.google.dev/) |
 
 ### Install
 
@@ -158,6 +160,22 @@ The standalone binary (`cmd/talon/`) supports additional flags:
 
 ---
 
+## Troubleshooting
+
+### macOS Gatekeeper / Quarantine
+
+If macOS blocks the app with a message like **"Talon.app is damaged and can't be opened"** or **"Apple cannot check it for malicious software"**, run the included quarantine removal script:
+
+```bash
+./remove_quarantine.sh
+```
+
+The script automatically looks for `Talon.app` in `/Applications` and `~/Downloads`. If the app is elsewhere, it will prompt you for the full path. It removes the quarantine extended attribute (`xattr -cr`) so macOS allows the app to launch normally.
+
+> **Note:** The script requires `sudo` to clear the quarantine attributes.
+
+---
+
 ## Configuration
 
 All config lives in `~/.talon/config.json`. Key options:
@@ -167,9 +185,12 @@ All config lives in `~/.talon/config.json`. Key options:
 | Key | Description |
 |-----|-------------|
 | `anthropic_key` | Anthropic API key (required for Claude models) |
-| `openai_key` | OpenAI API key (for GPT models and Whisper transcription) |
+| `openai_key` | OpenAI API key (for GPT chat models, Whisper transcription, and grammar fix) |
+| `gemini_key` | Google Gemini API key (for Gemini models) |
 | `deepgram_key` | Deepgram API key (alternative transcription provider) |
 | `telegram_token` | Telegram Bot API token |
+
+> **Provider auto-detection:** The model name prefix determines which provider and API key are used — `claude-*` → Anthropic, `gpt-*` / `o1-*` / `o3-*` / `o4-*` → OpenAI, `gemini-*` → Google.
 
 ### General
 
@@ -190,7 +211,7 @@ Agents are configured under the `agents` map. Each agent has:
 |-----|-------------|
 | `name` | Display name |
 | `model` | LLM model identifier (e.g., `claude-sonnet-4-20250514`) |
-| `soul_path` | Path to the system prompt file (relative to `~/.talon/`) |
+| `prompt_path` | Path to the system prompt file (relative to `~/.talon/`) |
 | `session_prefix` | Prefix for session IDs |
 | `enable_thinking` | Show extended thinking blocks |
 
@@ -213,25 +234,38 @@ talon/
 ├── app.go                 # App initialisation and lifecycle
 ├── app_chat.go            # Chat bindings (GUI ↔ Go)
 ├── app_agent.go           # Agent task bindings
-├── app_speech.go          # Voice recording / transcription bindings
+├── app_speech.go          # Voice recording, transcription, grammar fix
 ├── app_telegram.go        # Telegram bot lifecycle
 ├── app_settings.go        # Settings management
 ├── app_flow.go            # Flow (voice) bindings
+├── app_snippets.go        # Snippet CRUD operations
 ├── cmd/talon/             # CLI and server entry point
 │   └── main.go
 ├── frontend/              # Svelte + Vite UI
 │   └── src/
 │       ├── App.svelte
-│       ├── components/    # UI components
+│       ├── components/
+│       │   ├── SnippetsPanel.svelte   # Snippet management UI
+│       │   ├── LoadingSpinner.svelte  # Shared loading indicator
+│       │   └── ...                    # Chat, Agent, Flow, Settings, etc.
 │       └── lib/
-│           ├── stores/    # Svelte stores (chat, agent, flow)
-│           └── utils/     # Formatting helpers
+│           ├── stores/
+│           │   ├── chatStore.js       # Chat, streaming, Telegram chat list
+│           │   ├── agentStore.js      # Agent tasks, progress, files
+│           │   ├── flowStore.js       # Voice transcription history
+│           │   └── snippetsStore.js   # Snippet list and panel state
+│           └── utils/
+│               └── formatters.js      # Tool labels, path/URL shortening
 ├── internal/
 │   ├── agent/             # LLM agent loop (tool calls, streaming, thinking)
 │   ├── browser/           # Chromium automation (chromedp)
 │   ├── config/            # Config loading, bootstrap, defaults
 │   ├── gateway/           # CLI, HTTP, and Telegram interfaces
-│   ├── llm/               # Anthropic + OpenAI API clients
+│   ├── llm/               # Multi-provider LLM clients
+│   │   ├── anthropic.go   # Claude (Anthropic)
+│   │   ├── openai.go      # GPT / o-series (OpenAI)
+│   │   ├── gemini.go      # Gemini (Google, via OpenAI-compatible API)
+│   │   └── provider.go    # Auto-detection by model name prefix
 │   ├── router/            # Message routing to agent profiles
 │   ├── sandbox/           # WASM code execution (wazero)
 │   ├── scheduler/         # Cron-based task scheduling
@@ -240,6 +274,7 @@ talon/
 │   ├── tools/             # Tool registry and implementations
 │   └── util/              # Shared utilities
 ├── talon.sh               # Build and run scripts
+├── remove_quarantine.sh   # Fix macOS Gatekeeper quarantine
 └── wails.json             # Wails config
 ```
 
@@ -266,9 +301,9 @@ User Input
               ┌──────────┐ ┌───────┐ ┌──────┐
               │  LLM API │ │ Tools │ │Session│
               │(Anthropic│ │(shell,│ │(JSONL │
-              │ /OpenAI) │ │file,  │ │history│
-              └──────────┘ │browse,│ └──────┘
-                           │memory,│
+              │ /OpenAI/ │ │file,  │ │history│
+              │ Gemini)  │ │browse,│ └──────┘
+              └──────────┘ │memory,│
                            │code)  │
                            └───────┘
 ```
@@ -277,13 +312,15 @@ User Input
 
 All data is stored locally in `~/.talon/`:
 
-| Directory | Contents |
-|-----------|----------|
+| Path | Contents |
+|------|----------|
 | `sessions/` | Conversation history (JSONL files) |
+| `sessions/tg_*/` | Telegram user sessions |
 | `memory/` | Persistent knowledge (Markdown files) |
 | `agents/` | Agent task workspaces (one directory per task) |
-| `workspace/` | Shared workspace, home of `SOUL.md` |
+| `workspace/` | Shared workspace, home of `Master_prompt.md` |
 | `flow/` | Voice recording transcripts |
+| `snippets.json` | Text expansion triggers and replacements |
 
 ---
 
@@ -295,7 +332,17 @@ All data is stored locally in `~/.talon/`:
 2. Add the token to config or set `TELEGRAM_BOT_TOKEN`
 3. The bot auto-starts with the GUI, or run in server mode
 
-Supports text, images, and PDF attachments. Each Telegram user gets an isolated session.
+Supports text, images, and PDF attachments. Each Telegram user gets an isolated session (stored in `~/.talon/sessions/tg_{userID}/`).
+
+The desktop app also shows a live **Telegram chat list** in the sidebar — browse and review all Telegram conversations without leaving the app.
+
+### Snippets (Text Expansion)
+
+1. Open the Snippets panel from Settings
+2. Add trigger → expansion pairs (e.g., "sig" → "Best regards, John")
+3. Snippets auto-expand during voice dictation and push-to-talk
+
+Snippets are stored in `~/.talon/snippets.json` and matching is case-insensitive.
 
 ### Push-to-Talk Dictation
 
@@ -306,6 +353,8 @@ Supports text, images, and PDF attachments. Each Telegram user gets an isolated 
 
 Requires microphone and accessibility permissions on macOS.
 
+**Double-tap shortcut:** Quickly double-tap the modifier key (within 400ms) to fix grammar and spelling of the currently selected text in any app. Requires an OpenAI API key.
+
 ---
 
 ## Tech Stack
@@ -315,7 +364,7 @@ Requires microphone and accessibility permissions on macOS.
 | Desktop framework | [Wails v2](https://wails.io/) |
 | Frontend | [Svelte 4](https://svelte.dev/) + [Vite 5](https://vitejs.dev/) |
 | Backend | Go 1.24 |
-| LLM | [Anthropic Claude](https://anthropic.com/) / [OpenAI GPT](https://openai.com/) |
+| LLM | [Anthropic Claude](https://anthropic.com/) · [OpenAI GPT](https://openai.com/) · [Google Gemini](https://ai.google.dev/) |
 | Browser automation | [chromedp](https://github.com/chromedp/chromedp) |
 | Code sandbox | [wazero](https://wazero.io/) (WASM) |
 | Telegram | [telegram-bot-api](https://github.com/go-telegram-bot-api/telegram-bot-api) |

@@ -130,20 +130,38 @@ func (a *App) shutdown(ctx context.Context) {
 // was not fully initialised at launch (e.g. missing API key on first run).
 func (a *App) initCore(cfg *config.Config, baseDir string) error {
 	anthropicKey := cfg.AnthropicKey
+	anthropicSrc := "config.json"
 	if anthropicKey == "" {
 		anthropicKey = os.Getenv("ANTHROPIC_API_KEY")
+		anthropicSrc = "env"
 	}
 	openaiKey := cfg.OpenAIKey
+	openaiSrc := "config.json"
 	if openaiKey == "" {
 		openaiKey = os.Getenv("OPENAI_API_KEY")
+		openaiSrc = "env"
 	}
 	geminiKey := cfg.GeminiKey
+	geminiSrc := "config.json"
 	if geminiKey == "" {
 		geminiKey = os.Getenv("GEMINI_API_KEY")
+		geminiSrc = "env"
+	}
+
+	// Log which API keys were found and their source.
+	if anthropicKey != "" {
+		log.Printf("Anthropic API key loaded from %s", anthropicSrc)
+	}
+	if openaiKey != "" {
+		log.Printf("OpenAI API key loaded from %s", openaiSrc)
+	}
+	if geminiKey != "" {
+		log.Printf("Gemini API key loaded from %s", geminiSrc)
 	}
 
 	// Require at least one provider key to be configured.
 	if anthropicKey == "" && openaiKey == "" && geminiKey == "" {
+		log.Printf("No API keys found in config.json or environment variables")
 		return fmt.Errorf("No API key found. Add at least one API key (Anthropic, OpenAI, or Gemini) in Settings to get started.")
 	}
 

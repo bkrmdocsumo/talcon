@@ -135,6 +135,12 @@
                   <!-- Rendered inline with its tool_call above -->
                 {/if}
               {/each}
+              {#if message.isStreaming}
+                <div class="step-loading">
+                  <LoadingSpinner />
+                  <span class="step-loading-label">Working…</span>
+                </div>
+              {/if}
             </div>
           {/if}
           {#if message.content}
@@ -535,6 +541,26 @@
   .step-result-content {
     border-top: none;
     padding-top: 0;
+  }
+
+  .step-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  .step-loading-label {
+    font-weight: 500;
+    animation: pulse-opacity 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse-opacity {
+    0%, 100% { opacity: 0.5; }
+    50%      { opacity: 1; }
   }
 
   /* ─── File Attachments ─── */

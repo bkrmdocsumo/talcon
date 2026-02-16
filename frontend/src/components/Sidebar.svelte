@@ -13,6 +13,8 @@
   export let telegramStatus = 'stopped';
   export let snippets = []; // Array of { id, trigger, expansion }
   export let managingSnippets = false;
+  export let bgStreamingChats = new Set();     // chat session IDs streaming in background
+  export let bgStreamingAgents = new Set();    // agent session IDs streaming in background
 
   const dispatch = createEventDispatcher();
 
@@ -191,6 +193,9 @@
                   on:mouseleave={() => (hoveredChatId = null)}
                   title={chat.title}
                 >
+                  {#if bgStreamingChats.has(chat.id)}
+                    <span class="streaming-dot"></span>
+                  {/if}
                   <span class="history-title">{chat.title}</span>
                   <button
                     class="delete-btn"
@@ -304,6 +309,9 @@
                   on:mouseleave={() => (hoveredAgentTaskId = null)}
                   title={task.title}
                 >
+                  {#if bgStreamingAgents.has(task.id)}
+                    <span class="streaming-dot"></span>
+                  {/if}
                   <span class="history-title">{task.title}</span>
                   <button
                     class="delete-btn"
@@ -636,6 +644,23 @@
     font-size: 11px;
     color: var(--text-muted);
     margin-top: 2px;
+  }
+
+  /* ─── Background Streaming Indicator ─── */
+  .streaming-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent, #0ef0d8);
+    flex-shrink: 0;
+    margin-right: 4px;
+    animation: streaming-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes streaming-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
   }
 
   .delete-btn {

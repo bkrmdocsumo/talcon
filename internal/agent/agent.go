@@ -37,7 +37,7 @@ You MUST always save any code you produce as files using the write_file tool. NE
 
 // todoPromptSuffix is appended to the system prompt to instruct the agent
 // to use the todo_write tool for task planning. This is injected
-// automatically so it works regardless of what the user has in SOUL.md.
+// automatically so it works regardless of what the user has in Master_prompt.md.
 const todoPromptSuffix = `
 
 ## Task Planning (IMPORTANT)
@@ -98,10 +98,10 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 		return nil, fmt.Errorf("load session: %w", err)
 	}
 
-	// Load system prompt from SOUL file.
-	systemPrompt, err := loadSoul(deps.BaseDir, agentCfg.SoulPath)
+	// Load system prompt from Master_prompt file.
+	systemPrompt, err := loadPrompt(deps.BaseDir, agentCfg.PromptPath)
 	if err != nil {
-		return nil, fmt.Errorf("load soul: %w", err)
+		return nil, fmt.Errorf("load prompt: %w", err)
 	}
 
 	// Inject memory index into system prompt so the LLM knows what's available.
@@ -250,10 +250,10 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 		return nil, fmt.Errorf("load session: %w", err)
 	}
 
-	// Load system prompt from SOUL file.
-	systemPrompt, err := loadSoul(deps.BaseDir, agentCfg.SoulPath)
+	// Load system prompt from Master_prompt file.
+	systemPrompt, err := loadPrompt(deps.BaseDir, agentCfg.PromptPath)
 	if err != nil {
-		return nil, fmt.Errorf("load soul: %w", err)
+		return nil, fmt.Errorf("load prompt: %w", err)
 	}
 
 	// Inject memory index into system prompt so the LLM knows what's available.
@@ -370,22 +370,71 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 			})
 
 			// Emit file_created events for file-writing tools.
-			if tb.Name == "write_file" {
+			// Determine the output path field based on the tool name.
+			var createdFilePath string
+			switch tb.Name {
+			case "write_file", "create_pdf":
 				var fileInput struct {
 					Path string `json:"path"`
 				}
-				if json.Unmarshal(tb.Input, &fileInput) == nil && fileInput.Path != "" {
-					// Resolve the full path the same way the tool does.
-					resolvedPath := fileInput.Path
-					if sessionWorkDir != "" && !filepath.IsAbs(resolvedPath) {
-						resolvedPath = filepath.Join(sessionWorkDir, filepath.Clean(resolvedPath))
+				if json.Unmarshal(tb.Input, &fileInput) == nil {
+					createdFilePath = fileInput.Path
+				}
+			case "merge_pdf", "split_pdf":
+				var fileInput struct {
+					OutputPath string `json:"output_path"`
+				}
+				if json.Unmarshal(tb.Input, &fileInput) == nil {
+					createdFilePath = fileInput.OutputPath
+				}
+			}
+			if createdFilePath != "" {
+				resolvedPath := createdFilePath
+				if sessionWorkDir != "" && !filepath.IsAbs(resolvedPath) {
+					resolvedPath = filepath.Join(sessionWorkDir, filepath.Clean(resolvedPath))
+				}
+				fileName := filepath.Base(resolvedPath)
+				emit(StreamEvent{
+					Type:     "file_created",
+					Content:  resolvedPath,
+					ToolName: fileName,
+				})
+			}
+
+			// For execute_code: auto-save code to a file on successful runs.
+			if tb.Name == "execute_code" && sessionWorkDir != "" &&
+				!strings.HasPrefix(toolResult, "Exit code") &&
+				!strings.HasPrefix(toolResult, "Sandbox error") &&
+				!strings.HasPrefix(toolResult, "Error") {
+				var codeInput struct {
+					Language string `json:"language"`
+					Code     string `json:"code"`
+					Filename string `json:"filename"`
+				}
+				if json.Unmarshal(tb.Input, &codeInput) == nil && codeInput.Code != "" {
+					filename := codeInput.Filename
+					// Fallback if the LLM omits the filename.
+					if filename == "" {
+						ext := ".txt"
+						switch codeInput.Language {
+						case "python":
+							ext = ".py"
+						case "javascript":
+							ext = ".js"
+						case "go":
+							ext = ".go"
+						}
+						filename = fmt.Sprintf("script_%d%s", time.Now().Unix(), ext)
 					}
-					fileName := filepath.Base(resolvedPath)
-					emit(StreamEvent{
-						Type:     "file_created",
-						Content:  resolvedPath,
-						ToolName: fileName,
-					})
+					savePath := filepath.Join(sessionWorkDir, filepath.Clean(filename))
+					if err := os.WriteFile(savePath, []byte(codeInput.Code), 0o644); err == nil {
+						emit(StreamEvent{
+							Type:     "file_created",
+							Content:  savePath,
+							ToolName: filepath.Base(savePath),
+						})
+						log.Printf("[agent] auto-saved execute_code to %s", savePath)
+					}
 				}
 			}
 
@@ -415,9 +464,9 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 	return nil, fmt.Errorf("agent exceeded maximum tool iterations (%d)", maxToolIterations)
 }
 
-// loadSoul reads the system prompt file.
-func loadSoul(baseDir, soulPath string) (string, error) {
-	fullPath := filepath.Join(baseDir, soulPath)
+// loadPrompt reads the system prompt file.
+func loadPrompt(baseDir, promptPath string) (string, error) {
+	fullPath := filepath.Join(baseDir, promptPath)
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
 		return "", err

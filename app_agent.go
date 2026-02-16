@@ -15,9 +15,12 @@ import (
 )
 
 // SendAgentTaskStream starts a streaming agent turn for an agent task.
+// The sessionID parameter specifies which session to continue — the frontend
+// passes this explicitly to avoid races caused by the shared a.sessionID
+// field being overwritten when the user switches between Chat and Agent tabs.
 // Files are written to ~/.talon/agents/{session_id}/ instead of sessions/.
 // Events are emitted on "agent:stream:event" to avoid mixing with chat streams.
-func (a *App) SendAgentTaskStream(input string) error {
+func (a *App) SendAgentTaskStream(input string, sessionID string) error {
 	if !a.ready {
 		return fmt.Errorf("%s", a.initError)
 	}
@@ -26,7 +29,10 @@ func (a *App) SendAgentTaskStream(input string) error {
 		return fmt.Errorf("marshal input: %w", err)
 	}
 
-	sid := a.sessionID // capture before goroutine to avoid races
+	sid := sessionID
+	if sid == "" {
+		sid = a.sessionID // fallback for backward compatibility
+	}
 
 	baseDir, err := config.TalonDir()
 	if err != nil {

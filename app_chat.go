@@ -82,8 +82,11 @@ func (a *App) SendMessageWithFiles(input string, files []FileAttachment) (*ChatR
 }
 
 // SendMessageStream starts a streaming agent turn for a plain text message.
+// The sessionID parameter specifies which session to continue — the frontend
+// passes this explicitly to avoid races caused by the shared a.sessionID
+// field being overwritten when the user switches between Chat and Agent tabs.
 // It returns immediately; results are delivered via "chat:stream:event" Wails events.
-func (a *App) SendMessageStream(input string) error {
+func (a *App) SendMessageStream(input string, sessionID string) error {
 	if !a.ready {
 		return fmt.Errorf("%s", a.initError)
 	}
@@ -91,19 +94,26 @@ func (a *App) SendMessageStream(input string) error {
 	if err != nil {
 		return fmt.Errorf("marshal input: %w", err)
 	}
-	sid := a.sessionID // capture before goroutine to avoid races
+	sid := sessionID
+	if sid == "" {
+		sid = a.sessionID // fallback for backward compatibility
+	}
 	go a.runStream(sid, content, "", "chat:stream:event")
 	return nil
 }
 
 // SendMessageStreamWithFiles starts a streaming agent turn with file attachments.
+// The sessionID parameter specifies which session to continue.
 // It returns immediately; results are delivered via "chat:stream:event" Wails events.
-func (a *App) SendMessageStreamWithFiles(input string, files []FileAttachment) error {
+func (a *App) SendMessageStreamWithFiles(input string, files []FileAttachment, sessionID string) error {
 	if !a.ready {
 		return fmt.Errorf("%s", a.initError)
 	}
 	content := buildUserContent(input, files)
-	sid := a.sessionID // capture before goroutine to avoid races
+	sid := sessionID
+	if sid == "" {
+		sid = a.sessionID // fallback for backward compatibility
+	}
 	go a.runStream(sid, content, "", "chat:stream:event")
 	return nil
 }
@@ -129,9 +139,15 @@ func (a *App) runStream(sessionID string, content json.RawMessage, workspaceDir 
 		cancel()
 	}()
 
+	// Monotonic sequence counter so the frontend can reject duplicate events
+	// caused by the macOS WebKit Wails bridge firing the same event twice.
+	var seq int64
+
 	emit := func(evt agent.StreamEvent) {
+		seq++
 		data := map[string]interface{}{
 			"session_id": sessionID,
+			"seq":        seq,
 			"type":       evt.Type,
 			"content":    evt.Content,
 			"tool_name":  evt.ToolName,
@@ -168,8 +184,10 @@ func (a *App) runStream(sessionID string, content json.RawMessage, workspaceDir 
 
 	result, err := agent.RunAgentTurnStream(streamCtx, sessionID, content, a.agentCfg, a.deps, emit)
 	if err != nil {
+		seq++
 		wailsRuntime.EventsEmit(a.ctx, eventName, map[string]interface{}{
 			"session_id": sessionID,
+			"seq":        seq,
 			"type":       "error",
 			"error":      err.Error(),
 		})
@@ -177,6 +195,7 @@ func (a *App) runStream(sessionID string, content json.RawMessage, workspaceDir 
 	}
 
 	// Emit the final done event with complete response.
+	seq++
 	chatResp := turnResultToChat(result)
 	stepsData := make([]map[string]interface{}, 0, len(chatResp.Steps))
 	for _, s := range chatResp.Steps {
@@ -189,6 +208,7 @@ func (a *App) runStream(sessionID string, content json.RawMessage, workspaceDir 
 	}
 	wailsRuntime.EventsEmit(a.ctx, eventName, map[string]interface{}{
 		"session_id": sessionID,
+		"seq":        seq,
 		"type":       "done",
 		"final_text": chatResp.FinalText,
 		"steps":      stepsData,

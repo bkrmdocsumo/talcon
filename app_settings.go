@@ -119,6 +119,13 @@ func (a *App) SaveSettings(payload SettingsPayload) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
+	// Sync environment variables to match the saved config so that
+	// getConfiguredProviders() doesn't fall back to stale .env values
+	// when the user explicitly clears a key in settings.
+	syncEnvKey("ANTHROPIC_API_KEY", cfg.AnthropicKey)
+	syncEnvKey("OPENAI_API_KEY", cfg.OpenAIKey)
+	syncEnvKey("GEMINI_API_KEY", cfg.GeminiKey)
+
 	if !a.ready {
 		// First-time setup: app could not fully initialise at launch (e.g. no
 		// API key was configured). Attempt full initialisation now.
@@ -207,4 +214,60 @@ func (a *App) loadSpeechConfig() (speech.TranscribeConfig, error) {
 		Model:    model,
 		Prompt:   "Transcribe the following audio cleanly. Remove filler words such as um, uh, like, you know, so, and basically. Fix any grammatical errors and produce well-structured, punctuated sentences.",
 	}, nil
+}
+
+// ExecApprovalsPayload is the structure exposed to the frontend for reading/writing
+// allowed and blocked command prefixes.
+type ExecApprovalsPayload struct {
+	Allowed []string `json:"allowed"`
+	Blocked []string `json:"blocked"`
+}
+
+// GetExecApprovals returns the current allowed and blocked command lists.
+func (a *App) GetExecApprovals() (*ExecApprovalsPayload, error) {
+	baseDir, err := config.TalonDir()
+	if err != nil {
+		return nil, fmt.Errorf("resolve config dir: %w", err)
+	}
+	approvals, err := config.LoadExecApprovals(baseDir)
+	if err != nil {
+		return &ExecApprovalsPayload{
+			Allowed: []string{},
+			Blocked: []string{},
+		}, nil
+	}
+	return &ExecApprovalsPayload{
+		Allowed: approvals.Allowed,
+		Blocked: approvals.Blocked,
+	}, nil
+}
+
+// SaveExecApprovals persists the allowed and blocked command lists.
+// The CommandTool re-reads exec-approvals.json on every execution, so
+// changes take effect immediately without any restart or hot-reload.
+func (a *App) SaveExecApprovals(payload ExecApprovalsPayload) error {
+	baseDir, err := config.TalonDir()
+	if err != nil {
+		return fmt.Errorf("resolve config dir: %w", err)
+	}
+	approvals := &config.ExecApprovals{
+		Allowed: payload.Allowed,
+		Blocked: payload.Blocked,
+	}
+	if err := config.SaveExecApprovals(baseDir, approvals); err != nil {
+		return fmt.Errorf("save exec approvals: %w", err)
+	}
+
+	log.Printf("Exec approvals updated — allowed: %v, blocked: %v", approvals.Allowed, approvals.Blocked)
+	return nil
+}
+
+// syncEnvKey updates the process environment variable to match the config value.
+// If the config value is empty the env var is cleared; otherwise it is set.
+func syncEnvKey(envName, configValue string) {
+	if configValue != "" {
+		os.Setenv(envName, configValue)
+	} else {
+		os.Unsetenv(envName)
+	}
 }

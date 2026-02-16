@@ -90,6 +90,27 @@ export function formatToolLabel(name, inputJson) {
       case 'todo_write':
         detail = 'update plan';
         break;
+      case 'read_pdf':
+        detail = shortPath(input.path);
+        break;
+      case 'create_pdf':
+        detail = input.title
+          ? `${shortPath(input.path)} — "${truncate(input.title, 30)}"`
+          : shortPath(input.path);
+        break;
+      case 'pdf_info':
+        detail = shortPath(input.path);
+        break;
+      case 'merge_pdf':
+        detail = input.paths
+          ? `${input.paths.length} files → ${shortPath(input.output_path)}`
+          : shortPath(input.output_path);
+        break;
+      case 'split_pdf':
+        detail = input.pages
+          ? `${shortPath(input.path)} [p${input.pages}]`
+          : shortPath(input.path);
+        break;
     }
   } catch { /* ignore parse errors */ }
 
