@@ -151,17 +151,19 @@
   </div>
 
   <!-- Skills Section -->
-  {#if skillsUsed.length > 0}
-    <div class="panel-section">
-      <button class="section-header" on:click={toggleSkills}>
-        <span class="section-title">Skills</span>
-        <svg class="chevron" class:open={skillsOpen} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </button>
+  <div class="panel-section">
+    <button class="section-header" on:click={toggleSkills}>
+      <span class="section-title">Skills</span>
+      <svg class="chevron" class:open={skillsOpen} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M6 9l6 6 6-6" />
+      </svg>
+    </button>
 
-      {#if skillsOpen}
-        <div class="section-content">
+    {#if skillsOpen}
+      <div class="section-content">
+        {#if skillsUsed.length === 0}
+          <p class="empty-text">No skills used yet</p>
+        {:else}
           <div class="skill-list">
             {#each skillsUsed as skill}
               <div class="skill-tag">
@@ -173,10 +175,10 @@
               </div>
             {/each}
           </div>
-        </div>
-      {/if}
-    </div>
-  {/if}
+        {/if}
+      </div>
+    {/if}
+  </div>
 
   <!-- Context Section -->
   <div class="panel-section">

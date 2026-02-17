@@ -96,6 +96,17 @@
     dispatch('deleteAgentTask', { id: taskId });
   }
 
+  // ─── Open folder handlers ───
+  function handleOpenChatFolder(e, chatId) {
+    e.stopPropagation();
+    dispatch('openChatFolder', { id: chatId });
+  }
+
+  function handleOpenAgentFolder(e, taskId) {
+    e.stopPropagation();
+    dispatch('openAgentFolder', { id: taskId });
+  }
+
   // ─── Time formatting ───
   function formatTimestamp(ts) {
     if (!ts) return '';
@@ -197,6 +208,16 @@
                     <span class="streaming-dot"></span>
                   {/if}
                   <span class="history-title">{chat.title}</span>
+                  <button
+                    class="folder-btn"
+                    class:visible={hoveredChatId === chat.id}
+                    on:click={(e) => handleOpenChatFolder(e, chat.id)}
+                    title="Open folder"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+                    </svg>
+                  </button>
                   <button
                     class="delete-btn"
                     class:visible={hoveredChatId === chat.id}
@@ -313,6 +334,16 @@
                     <span class="streaming-dot"></span>
                   {/if}
                   <span class="history-title">{task.title}</span>
+                  <button
+                    class="folder-btn"
+                    class:visible={hoveredAgentTaskId === task.id}
+                    on:click={(e) => handleOpenAgentFolder(e, task.id)}
+                    title="Open folder"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+                    </svg>
+                  </button>
                   <button
                     class="delete-btn"
                     class:visible={hoveredAgentTaskId === task.id}
@@ -681,6 +712,7 @@
     50% { opacity: 0.35; }
   }
 
+  .folder-btn,
   .delete-btn {
     flex-shrink: 0;
     display: flex;
@@ -700,9 +732,15 @@
     pointer-events: none;
   }
 
+  .folder-btn.visible,
   .delete-btn.visible {
     opacity: 1;
     pointer-events: auto;
+  }
+
+  .folder-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--accent);
   }
 
   .delete-btn:hover {

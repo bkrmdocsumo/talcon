@@ -29,6 +29,10 @@ export const agentIsStreaming = writable(false);
 // Internal state
 let _agentStreamCleanup = null;
 let _agentCurrentThinkingIdx = -1;
+// Deferred content reset: instead of clearing msg.content immediately on
+// tool_result (which causes a visual jump), we set this flag and clear on
+// the next text or tool_call event so the previous text stays visible.
+let _agentPendingContentReset = false;
 
 // Sequence-based dedup: the backend attaches a monotonically increasing `seq`
 // number to each event. Duplicates from the Wails macOS WebKit bridge carry
@@ -40,7 +44,7 @@ let _agentLastSeenSeq = 0;
 // has navigated away from.
 const _bgAgentStreams = new Map();
 // Map<sessionId, { messages, streamingIdx, currentThinkingIdx, lastSeenSeq,
-//   createdFiles, progressSteps, contextTools, taskTitle }>
+//   createdFiles, progressSteps, contextTools, taskTitle, pendingContentReset }>
 
 // Exported store: set of agent session IDs streaming in the background.
 export const backgroundAgentStreamingSessions = writable(new Set());
@@ -74,6 +78,7 @@ function saveCurrentAgentToBackground() {
     streamingIdx: get(agentStreamingIdx),
     currentThinkingIdx: _agentCurrentThinkingIdx,
     lastSeenSeq: _agentLastSeenSeq,
+    pendingContentReset: _agentPendingContentReset,
     createdFiles: get(agentCreatedFiles),
     progressSteps: get(agentProgressSteps),
     contextTools: get(agentContextTools),
@@ -127,6 +132,11 @@ function handleAgentStreamEvent(data) {
     _agentLastSeenSeq = data.seq;
   }
 
+  // Track whether we need to finish the stream AFTER the messages update
+  // completes, to avoid nested agentMessages.update calls that cause
+  // double re-renders and visual jumps.
+  let shouldFinish = false;
+
   agentMessages.update(msgs => {
     const updated = [...msgs];
     const msg = { ...updated[idx] };
@@ -161,11 +171,20 @@ function handleAgentStreamEvent(data) {
         break;
 
       case 'text':
-        msg.content = (msg.content || '') + data.content;
+        if (_agentPendingContentReset) {
+          msg.content = data.content;
+          _agentPendingContentReset = false;
+        } else {
+          msg.content = (msg.content || '') + data.content;
+        }
         break;
 
       case 'tool_call': {
         _agentCurrentThinkingIdx = -1;
+        if (_agentPendingContentReset) {
+          msg.content = '';
+          _agentPendingContentReset = false;
+        }
         msg.steps = [...(msg.steps || []), { type: 'tool_call', tool_name: data.tool_name, tool_input: data.tool_input }];
 
         // Track context tools (deduplicated), skip todo_write and use_skill as meta-tools.
@@ -181,10 +200,10 @@ function handleAgentStreamEvent(data) {
 
       case 'tool_result':
         msg.steps = [...(msg.steps || []), { type: 'tool_result', tool_name: data.tool_name, content: data.content }];
-        // Reset accumulated text so the next LLM iteration starts fresh.
-        // Without this, text from the previous iteration gets concatenated
-        // with text from the new iteration, causing visible repetition.
-        msg.content = '';
+        // Defer the content reset until the next text or tool_call event
+        // so the previous text stays visible and avoids a jarring visual
+        // jump where the content area momentarily collapses.
+        _agentPendingContentReset = true;
         break;
 
       case 'todo_update':
@@ -225,14 +244,8 @@ function handleAgentStreamEvent(data) {
         msg.role = 'assistant';
         msg.content = data.final_text || msg.content;
         msg.steps = data.steps || msg.steps;
-        delete msg.isStreaming;
-        // Mark any remaining in_progress steps as completed.
-        agentProgressSteps.update(steps =>
-          steps.some(s => s.status === 'in_progress')
-            ? steps.map(s => s.status === 'in_progress' ? { ...s, status: 'completed' } : s)
-            : steps
-        );
-        finishAgentStream();
+        msg.isStreaming = false;
+        shouldFinish = true;
         break;
 
       case 'error':
@@ -240,14 +253,28 @@ function handleAgentStreamEvent(data) {
         msg.content = msg.content || `Something went wrong: ${data.error}`;
         msg.steps = msg.steps || [];
         msg.isError = true;
-        delete msg.isStreaming;
-        finishAgentStream();
+        msg.isStreaming = false;
+        shouldFinish = true;
         break;
     }
 
     updated[idx] = msg;
     return updated;
   });
+
+  // Finish the stream outside the messages update to avoid nested store
+  // updates that cause double re-renders and visual message shifting.
+  if (shouldFinish) {
+    // Mark any remaining in_progress steps as completed.
+    if (data.type === 'done') {
+      agentProgressSteps.update(steps =>
+        steps.some(s => s.status === 'in_progress')
+          ? steps.map(s => s.status === 'in_progress' ? { ...s, status: 'completed' } : s)
+          : steps
+      );
+    }
+    finishAgentStream();
+  }
 }
 
 // Handle stream events for agent sessions running in the background.
@@ -288,11 +315,20 @@ function handleBgAgentStreamEvent(sessionId, data) {
       break;
 
     case 'text':
-      msg.content = (msg.content || '') + data.content;
+      if (state.pendingContentReset) {
+        msg.content = data.content;
+        state.pendingContentReset = false;
+      } else {
+        msg.content = (msg.content || '') + data.content;
+      }
       break;
 
     case 'tool_call':
       state.currentThinkingIdx = -1;
+      if (state.pendingContentReset) {
+        msg.content = '';
+        state.pendingContentReset = false;
+      }
       msg.steps = [...(msg.steps || []), { type: 'tool_call', tool_name: data.tool_name, tool_input: data.tool_input }];
       if (data.tool_name !== 'todo_write' && data.tool_name !== 'use_skill') {
         const toolLabel = formatToolName(data.tool_name);
@@ -304,7 +340,7 @@ function handleBgAgentStreamEvent(sessionId, data) {
 
     case 'tool_result':
       msg.steps = [...(msg.steps || []), { type: 'tool_result', tool_name: data.tool_name, content: data.content }];
-      msg.content = '';
+      state.pendingContentReset = true;
       break;
 
     case 'todo_update':
@@ -366,20 +402,10 @@ function handleBgAgentStreamEvent(sessionId, data) {
 }
 
 function finishAgentStream() {
-  const idx = get(agentStreamingIdx);
-  if (idx >= 0) {
-    agentMessages.update(msgs => {
-      const updated = [...msgs];
-      if (updated[idx]) {
-        updated[idx] = { ...updated[idx], isStreaming: false };
-      }
-      return updated;
-    });
-  }
-
   agentIsStreaming.set(false);
   agentLoading.set(false);
   _agentCurrentThinkingIdx = -1;
+  _agentPendingContentReset = false;
   agentStreamingIdx.set(-1);
   cleanupAgentListenerIfNeeded();
   refreshAgentTaskHistory();
@@ -422,6 +448,7 @@ export async function startAgentTask(text, readyFlag, files) {
   agentLoading.set(true);
   agentIsStreaming.set(true);
   _agentCurrentThinkingIdx = -1;
+  _agentPendingContentReset = false;
   agentPhase.set('workspace');
 
   // Reset sequence counter for the new stream.
@@ -447,7 +474,7 @@ export async function startAgentTask(text, readyFlag, files) {
       const updated = [...msgs];
       const idx = get(agentStreamingIdx);
       if (updated[idx]) {
-        updated[idx] = { ...updated[idx], content: `Something went wrong: ${err}` };
+        updated[idx] = { ...updated[idx], content: `Something went wrong: ${err}`, isStreaming: false };
       }
       return updated;
     });
@@ -477,6 +504,7 @@ export async function sendAgentFollowUp(text, readyFlag, files) {
   agentLoading.set(true);
   agentIsStreaming.set(true);
   _agentCurrentThinkingIdx = -1;
+  _agentPendingContentReset = false;
 
   // Reset sequence counter for the new stream.
   _agentLastSeenSeq = 0;
@@ -501,7 +529,7 @@ export async function sendAgentFollowUp(text, readyFlag, files) {
       const updated = [...msgs];
       const idx = get(agentStreamingIdx);
       if (updated[idx]) {
-        updated[idx] = { ...updated[idx], content: `Something went wrong: ${err}` };
+        updated[idx] = { ...updated[idx], content: `Something went wrong: ${err}`, isStreaming: false };
       }
       return updated;
     });
@@ -514,6 +542,16 @@ export async function cancelAgent() {
     await CancelStream(get(activeAgentTaskId) || '');
   } catch (err) {
     console.error('Agent cancel failed:', err);
+  }
+  const idx = get(agentStreamingIdx);
+  if (idx >= 0) {
+    agentMessages.update(msgs => {
+      const updated = [...msgs];
+      if (updated[idx]) {
+        updated[idx] = { ...updated[idx], isStreaming: false };
+      }
+      return updated;
+    });
   }
   finishAgentStream();
 }
@@ -552,6 +590,7 @@ export async function selectAgentTask(sessionId) {
     agentStreamingIdx.set(state.streamingIdx);
     _agentCurrentThinkingIdx = state.currentThinkingIdx;
     _agentLastSeenSeq = state.lastSeenSeq;
+    _agentPendingContentReset = state.pendingContentReset || false;
     agentCreatedFiles.set(state.createdFiles);
     agentProgressSteps.set(state.progressSteps);
     agentContextTools.set(state.contextTools);

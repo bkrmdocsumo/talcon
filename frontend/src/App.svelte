@@ -140,7 +140,7 @@
   async function handleNewSession() {
     closeTelegramView();
     await newSession();
-    chatInputRef?.focus();
+    tick().then(() => chatInputRef?.focus());
   }
 
   function handleSelectChat(e) {
@@ -233,6 +233,7 @@
 
   function handleNewAgentTask() {
     newAgentTask();
+    tick().then(() => agentWelcomeRef?.focus());
   }
 
   function handleSelectAgentTask(e) {
@@ -285,6 +286,26 @@
       }
     }
   }
+
+  async function handleOpenChatFolder(e) {
+    const { id } = e.detail;
+    if (!id) return;
+    try {
+      await OpenFileInApp('~/.talon/sessions/' + id);
+    } catch (err) {
+      console.error('Failed to open chat folder:', err);
+    }
+  }
+
+  async function handleOpenAgentFolder(e) {
+    const { id } = e.detail;
+    if (!id) return;
+    try {
+      await OpenFileInApp('~/.talon/agents/' + id);
+    } catch (err) {
+      console.error('Failed to open agent folder:', err);
+    }
+  }
 </script>
 
 {#if $activeTab === 'plugins'}
@@ -319,6 +340,8 @@
     on:newAgentTask={handleNewAgentTask}
     on:selectAgentTask={handleSelectAgentTask}
     on:deleteAgentTask={handleDeleteAgentTask}
+    on:openChatFolder={handleOpenChatFolder}
+    on:openAgentFolder={handleOpenAgentFolder}
     on:manageSnippets={handleManageSnippets}
     on:openSettings={() => showSettings.set(true)}
     on:openPlugins={handleOpenPlugins}

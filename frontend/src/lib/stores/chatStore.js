@@ -61,12 +61,17 @@ let _streamCleanup = null;
 // twice, the duplicate will carry the same `seq` and be dropped.
 let _lastSeenSeq = 0;
 
+// Deferred content reset: instead of clearing msg.content immediately on
+// tool_result (which causes a visual jump), we set this flag and clear on
+// the next text or tool_call event so the previous text stays visible.
+let _pendingContentReset = false;
+
 // ─── Background stream support ───
 // Caches state for sessions whose streams are still running but the user has
 // navigated away from. Events keep updating the cache; when the user returns,
 // the cached state is restored into the main stores.
 const _bgChatStreams = new Map();
-// Map<sessionId, { messages, streamingIndex, currentThinkingIdx, lastSeenSeq, createdFiles }>
+// Map<sessionId, { messages, streamingIndex, currentThinkingIdx, lastSeenSeq, pendingContentReset, createdFiles }>
 
 // Exported store: set of session IDs that are streaming in the background.
 // The sidebar uses this to show a subtle activity indicator.
@@ -101,6 +106,7 @@ function saveCurrentChatToBackground() {
     streamingIndex: get(streamingIndex),
     currentThinkingIdx: get(currentThinkingIdx),
     lastSeenSeq: _lastSeenSeq,
+    pendingContentReset: _pendingContentReset,
     createdFiles: get(chatCreatedFiles),
   });
   backgroundStreamingSessions.update(s => { s.add(currentId); return new Set(s); });
@@ -214,20 +220,29 @@ export function handleStreamEvent(data) {
       }
 
       case 'text':
-        msg.content = (msg.content || '') + data.content;
+        if (_pendingContentReset) {
+          msg.content = data.content;
+          _pendingContentReset = false;
+        } else {
+          msg.content = (msg.content || '') + data.content;
+        }
         break;
 
       case 'tool_call':
         currentThinkingIdx.set(-1);
+        if (_pendingContentReset) {
+          msg.content = '';
+          _pendingContentReset = false;
+        }
         msg.steps = [...(msg.steps || []), { type: 'tool_call', tool_name: data.tool_name, tool_input: data.tool_input }];
         break;
 
       case 'tool_result':
         msg.steps = [...(msg.steps || []), { type: 'tool_result', tool_name: data.tool_name, content: data.content }];
-        // Reset accumulated text so the next LLM iteration starts fresh.
-        // Without this, text from the previous iteration gets concatenated
-        // with text from the new iteration, causing visible repetition.
-        msg.content = '';
+        // Defer the content reset until the next text or tool_call event
+        // so the previous text stays visible and avoids a jarring visual
+        // jump where the content area momentarily collapses.
+        _pendingContentReset = true;
         break;
 
       case 'file_created':
@@ -303,17 +318,26 @@ function handleBgChatStreamEvent(sessionId, data) {
       break;
 
     case 'text':
-      msg.content = (msg.content || '') + data.content;
+      if (state.pendingContentReset) {
+        msg.content = data.content;
+        state.pendingContentReset = false;
+      } else {
+        msg.content = (msg.content || '') + data.content;
+      }
       break;
 
     case 'tool_call':
       state.currentThinkingIdx = -1;
+      if (state.pendingContentReset) {
+        msg.content = '';
+        state.pendingContentReset = false;
+      }
       msg.steps = [...(msg.steps || []), { type: 'tool_call', tool_name: data.tool_name, tool_input: data.tool_input }];
       break;
 
     case 'tool_result':
       msg.steps = [...(msg.steps || []), { type: 'tool_result', tool_name: data.tool_name, content: data.content }];
-      msg.content = '';
+      state.pendingContentReset = true;
       break;
 
     case 'file_created':
@@ -357,6 +381,7 @@ function handleBgChatStreamEvent(sessionId, data) {
 export function finishStream() {
   streamingIndex.set(-1);
   currentThinkingIdx.set(-1);
+  _pendingContentReset = false;
   loading.set(false);
   cleanupChatListenerIfNeeded();
   refreshChatHistory();
@@ -402,6 +427,7 @@ export async function sendMessage(text, files) {
   const msgList = get(messages);
   streamingIndex.set(msgList.length - 1);
   currentThinkingIdx.set(-1);
+  _pendingContentReset = false;
   loading.set(true);
 
   // Reset sequence counter for the new stream.
@@ -499,6 +525,7 @@ export async function selectChat(sessionId) {
     streamingIndex.set(state.streamingIndex);
     currentThinkingIdx.set(state.currentThinkingIdx);
     _lastSeenSeq = state.lastSeenSeq;
+    _pendingContentReset = state.pendingContentReset || false;
     chatCreatedFiles.set(state.createdFiles);
     loading.set(state.streamingIndex >= 0);
     return;

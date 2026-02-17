@@ -254,14 +254,18 @@
         </button>
       </div>
 
-      <div class="modal-body">
-        {#if settingsError}
+      {#if settingsError}
+        <div class="settings-alert-fixed">
           <div class="settings-alert settings-alert-error">{settingsError}</div>
-        {/if}
-        {#if settingsSuccess}
+        </div>
+      {/if}
+      {#if settingsSuccess}
+        <div class="settings-alert-fixed">
           <div class="settings-alert settings-alert-success">{settingsSuccess}</div>
-        {/if}
+        </div>
+      {/if}
 
+      <div class="modal-body">
         <!-- ─── General Tab ─── -->
         {#if activeTab === 'general'}
           <label class="field-label" for="settings-api-key">Anthropic API Key</label>
@@ -647,6 +651,11 @@
     border-bottom-color: var(--accent);
   }
 
+  .settings-alert-fixed {
+    padding: 12px 20px 0;
+    flex-shrink: 0;
+  }
+
   .modal-body {
     padding: 20px;
     overflow-y: auto;
@@ -664,7 +673,7 @@
     padding: 10px 14px;
     border-radius: 8px;
     font-size: 13px;
-    margin-bottom: 16px;
+    margin: 0;
   }
 
   .settings-alert-error {

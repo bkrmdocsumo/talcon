@@ -30,6 +30,7 @@
   let fileInputEl;
   let files = [];
   let skipNextScroll = false;
+  let userScrolledUp = false;
   let dragOver = false;
 
   // File attachment constants (same as ChatInput)
@@ -48,14 +49,22 @@
       skipNextScroll = false;
       return;
     }
-    scrollToBottom();
+    if (loading && !userScrolledUp) {
+      scrollToBottom();
+    }
   });
+
+  function handleScroll() {
+    if (!contentContainer) return;
+    const { scrollTop, scrollHeight, clientHeight } = contentContainer;
+    userScrolledUp = scrollHeight - scrollTop - clientHeight > 150;
+  }
 
   function scrollToBottom() {
     if (contentContainer) {
       contentContainer.scrollTo({
         top: contentContainer.scrollHeight,
-        behavior: 'smooth',
+        behavior: isStreaming ? 'auto' : 'smooth',
       });
     }
   }
@@ -121,6 +130,7 @@
   function handleSend() {
     const text = input.trim();
     if ((!text && files.length === 0) || loading) return;
+    userScrolledUp = false;
     dispatch('sendFollowUp', { text, files: [...files] });
     input = '';
     files = [];
@@ -247,7 +257,7 @@
 <div class="workspace-layout">
   <!-- Center Content -->
   <div class="workspace-center">
-    <div class="workspace-scroll" bind:this={contentContainer}>
+    <div class="workspace-scroll" bind:this={contentContainer} on:scroll={handleScroll}>
       <div class="workspace-content">
         <!-- Task Title -->
         {#if taskTitle}
@@ -283,7 +293,7 @@
             </div>
           {:else if message.role === 'assistant'}
             <!-- Summary line (show after first assistant response only, when not streaming) -->
-            {#if msgIdx === 1 && summaryText && !isStreaming}
+            {#if msgIdx === 1 && summaryText && !message.isStreaming}
               <div class="summary-line">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                   <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
@@ -375,7 +385,7 @@
         {/each}
 
         <!-- Created File Cards (shown when not streaming) -->
-        {#if createdFiles.length > 0 && !isStreaming}
+        {#if createdFiles.length > 0}
           <div class="file-cards">
             {#each createdFiles as file}
               <AgentFileCard {file} on:openFile={handleOpenFile} on:openFolder={handleRevealFile} />

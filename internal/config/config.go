@@ -156,6 +156,9 @@ The ` + "`execute_code`" + ` tool runs code in an isolated WebAssembly (WASI) sa
 
 **QuickJS (JavaScript) specifics**: No Node.js APIs (` + "`fs`" + `, ` + "`path`" + `, ` + "`http`" + `), no ` + "`fetch`" + `, no ` + "`Buffer`" + `. Only ECMAScript standard built-ins.
 
+## PDF tool 
+- create pdf - PDF use only standard ASCII characters.
+
 ## Memory
 
 You have persistent memory that survives across conversations. Use it proactively:

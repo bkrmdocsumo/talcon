@@ -175,21 +175,17 @@
           <div class="attachments">
             {#each message.files as file}
               {#if isImage(file.type)}
-                <div class="attachment-image">
-                  <img src={file.dataUrl} alt={file.name} />
+                <div class="attachment-chip attachment-chip-image">
+                  <img class="attachment-chip-thumb" src={file.dataUrl} alt={file.name} />
+                  <span class="attachment-chip-name">{file.name}</span>
                 </div>
               {:else}
-                <div class="attachment-file">
-                  <div class="attachment-file-icon">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                      <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                  </div>
-                  <div class="attachment-file-info">
-                    <span class="attachment-file-name">{file.name}</span>
-                    <span class="attachment-file-meta">{fileExtension(file.name)} · {formatSize(file.size)}</span>
-                  </div>
+                <div class="attachment-chip">
+                  <svg class="attachment-chip-icon" width="12" height="12" viewBox="0 0 24 24" fill="none">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                  <span class="attachment-chip-name">{file.name}</span>
                 </div>
               {/if}
             {/each}
@@ -563,70 +559,45 @@
     50%      { opacity: 1; }
   }
 
-  /* ─── File Attachments ─── */
+  /* ─── File Attachments (compact chips) ─── */
   .attachments {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: 4px;
+    margin-bottom: 6px;
+    justify-content: flex-end;
   }
 
-  .attachment-image {
-    border-radius: 10px;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    max-width: 300px;
-  }
-
-  .attachment-image img {
-    display: block;
-    max-width: 100%;
-    max-height: 240px;
-    object-fit: contain;
-    background: rgba(0, 0, 0, 0.2);
-  }
-
-  .attachment-file {
+  .attachment-chip {
     display: flex;
     align-items: center;
-    gap: 10px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 10px 14px;
-    max-width: 260px;
-  }
-
-  .attachment-file-icon {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    gap: 4px;
     background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .attachment-chip-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .attachment-chip-icon {
     color: var(--text-muted);
     flex-shrink: 0;
   }
 
-  .attachment-file-info {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .attachment-file-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-primary);
+  .attachment-chip-name {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .attachment-file-meta {
-    font-size: 11px;
-    color: var(--text-muted);
+    max-width: 150px;
   }
 
   /* ─── Message Actions (Copy button at bottom of message) ─── */
