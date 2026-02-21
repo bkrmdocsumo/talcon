@@ -2,18 +2,18 @@ import { marked } from 'marked';
 
 // Custom renderer that wraps fenced code blocks in a container with a
 // language label and a copy button.
-const renderer = new marked.Renderer();
+const renderer = {
+  code(text, lang) {
+    const language = lang || '';
+    const displayLang = language || 'code';
+    const codeText = text || '';
+    const escaped = codeText
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
 
-renderer.code = function ({ text, lang }) {
-  const language = lang || '';
-  const displayLang = language || 'code';
-  const escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-
-  return `<div class="code-block-wrapper">
+    return `<div class="code-block-wrapper">
   <div class="code-block-header">
     <span class="code-block-lang">${displayLang}</span>
     <button class="code-copy-btn" data-code="${escaped}" title="Copy code">
@@ -26,9 +26,10 @@ renderer.code = function ({ text, lang }) {
   </div>
   <pre><code class="language-${language}">${escaped}</code></pre>
 </div>`;
+  }
 };
 
-marked.setOptions({
+marked.use({
   breaks: true,
   gfm: true,
   renderer,
@@ -39,9 +40,11 @@ marked.setOptions({
  * Returns the raw text on failure.
  */
 export function renderMarkdown(text) {
+  if (!text) return '';
   try {
     return marked.parse(text);
-  } catch {
+  } catch (e) {
+    console.error('Markdown parse error:', e);
     return text;
   }
 }
