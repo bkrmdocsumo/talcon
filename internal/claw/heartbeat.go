@@ -45,6 +45,7 @@ func (h *Heartbeat) Start() {
 		return
 	}
 	h.running = true
+	h.stopCh = make(chan struct{})
 	h.ticker = time.NewTicker(h.interval)
 	go h.loop()
 	log.Printf("[claw] heartbeat started (interval=%s)", h.interval)

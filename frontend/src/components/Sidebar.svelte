@@ -17,6 +17,7 @@
   export let bgStreamingAgents = new Set();    // agent session IDs streaming in background
   export let clawEvents = [];                  // Array of claw event records
   export let clawStats = {};                   // Claw dashboard stats
+  export let clawConfig = {};                  // Claw gateway config
 
   const dispatch = createEventDispatcher();
 
@@ -140,11 +141,6 @@
     ? telegramChats.filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()))
     : telegramChats;
 
-  // ─── Claw event filtering ───
-  $: filteredClawEvents = searchQuery
-    ? clawEvents.filter(e => (e.source || '').toLowerCase().includes(searchQuery.toLowerCase()) || (e.type || '').toLowerCase().includes(searchQuery.toLowerCase()))
-    : clawEvents;
-
   function formatClawTime(ts) {
     if (!ts) return '';
     const d = new Date(ts);
@@ -154,6 +150,44 @@
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  const eventTitleMap = {
+    'lifecycle:startup': 'App Started',
+    'lifecycle:shutdown': 'App Shutdown',
+    'heartbeat-ticker': 'Heartbeat Check',
+    'manual:ui': 'Manual Event',
+  };
+
+  const eventTypeLabels = {
+    cron: 'Cron',
+    hook: 'Hook',
+    heartbeat: 'Heartbeat',
+    webhook: 'Webhook',
+    message: 'Message',
+  };
+
+  function payloadPreview(payload, maxLen = 40) {
+    if (!payload) return '';
+    const oneLine = payload.replace(/\n/g, ' ').trim();
+    return oneLine.length > maxLen ? oneLine.slice(0, maxLen) + '...' : oneLine;
+  }
+
+  function formatEventTitle(event) {
+    if (event.source === 'scheduler' && event.payload) {
+      return payloadPreview(event.payload, 40);
+    }
+    if (eventTitleMap[event.source]) return eventTitleMap[event.source];
+    if (event.source && !event.source.includes(':') && event.source !== event.type) {
+      return event.source.charAt(0).toUpperCase() + event.source.slice(1);
+    }
+    return eventTypeLabels[event.type] || event.type;
+  }
+
+  function formatEventMeta(event) {
+    const label = eventTypeLabels[event.type] || event.type;
+    const time = formatClawTime(event.timestamp);
+    return `${label} · ${time}`;
   }
 
   // Group items by time period.
@@ -468,41 +502,73 @@
         <span class="claw-status-dot" class:active={clawStats.gateway_active}></span>
       </div>
 
-      <div class="claw-stats-mini">
-        <span>{clawStats.total_events || 0} events</span>
-        <span class="claw-stats-sep">&middot;</span>
-        <span>{clawStats.events_today || 0} today</span>
-      </div>
-
-      <div class="search-wrapper">
-        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-          <circle cx="11" cy="11" r="8" />
-          <path d="M21 21l-4.35-4.35" />
-        </svg>
-        <input
-          class="search-input"
-          type="text"
-          placeholder="Search events"
-          bind:value={searchQuery}
-        />
+      <!-- Triggers status -->
+      <div class="claw-trigger-list">
+        <button class="claw-trigger-row claw-trigger-toggle" on:click={() => dispatch('clawToggleHeartbeat')}>
+          <span class="claw-trigger-dot" class:claw-trigger-on={clawConfig.heartbeat_enabled}></span>
+          <span class="claw-trigger-label">Heartbeat</span>
+          <span class="claw-trigger-status">{clawConfig.heartbeat_enabled ? 'ON' : 'OFF'}</span>
+        </button>
+        <div class="claw-trigger-row">
+          <span class="claw-trigger-dot claw-trigger-on"></span>
+          <span class="claw-trigger-label">Messages</span>
+          <span class="claw-trigger-status">ON</span>
+        </div>
+        <div class="claw-trigger-row">
+          <span class="claw-trigger-dot" class:claw-trigger-on={clawConfig.crons_enabled !== false}></span>
+          <span class="claw-trigger-label">Crons</span>
+          <span class="claw-trigger-status">{clawConfig.crons_enabled !== false ? 'ON' : 'OFF'}</span>
+        </div>
+        <div class="claw-trigger-row">
+          <span class="claw-trigger-dot" class:claw-trigger-on={clawConfig.hooks_enabled !== false}></span>
+          <span class="claw-trigger-label">Hooks</span>
+          <span class="claw-trigger-status">{clawConfig.hooks_enabled !== false ? 'ON' : 'OFF'}</span>
+        </div>
+        <div class="claw-trigger-row">
+          <span class="claw-trigger-dot" class:claw-trigger-on={clawConfig.webhooks_enabled !== false}></span>
+          <span class="claw-trigger-label">Webhooks</span>
+          <span class="claw-trigger-status">{clawConfig.webhooks_enabled !== false ? 'ON' : 'OFF'}</span>
+        </div>
       </div>
 
       <div class="nav-divider"></div>
 
+      <!-- Stats -->
+      <div class="claw-stats-mini">
+        <div class="claw-stat-row">
+          <span class="claw-stat-label">Total events</span>
+          <span class="claw-stat-value">{clawStats.total_events || 0}</span>
+        </div>
+        <div class="claw-stat-row">
+          <span class="claw-stat-label">Today</span>
+          <span class="claw-stat-value">{clawStats.events_today || 0}</span>
+        </div>
+        <div class="claw-stat-row">
+          <span class="claw-stat-label">Last heartbeat</span>
+          <span class="claw-stat-value">{clawStats.last_heartbeat ? formatClawTime(clawStats.last_heartbeat) : 'Never'}</span>
+        </div>
+      </div>
+
+      <div class="nav-divider"></div>
+
+      <!-- Recent activity preview -->
+      <div class="claw-section-label">Recent Activity</div>
       <div class="chat-history">
-        {#if filteredClawEvents.length === 0}
-          <p class="empty-history">
-            {searchQuery ? 'No matching events' : 'Events will appear here as triggers fire'}
-          </p>
+        {#if clawEvents.length === 0}
+          <p class="empty-history">No events yet</p>
         {:else}
-          {#each filteredClawEvents as event (event.id)}
-            <div class="history-item claw-event-item" class:claw-suppressed={event.status === 'suppressed'}>
+          {#each clawEvents as event (event.id)}
+            <button
+              class="history-item claw-event-item"
+              class:claw-suppressed={event.status === 'suppressed'}
+              on:click={() => dispatch('clawSubTabChange', { tab: 'events', eventId: event.id })}
+            >
               <span class="claw-type-dot" class:claw-type-heartbeat={event.type === 'heartbeat'} class:claw-type-cron={event.type === 'cron'} class:claw-type-hook={event.type === 'hook'} class:claw-type-webhook={event.type === 'webhook'} class:claw-type-message={event.type === 'message'}></span>
               <div class="claw-event-info">
-                <span class="history-title">{event.source || event.type}</span>
-                <span class="claw-event-meta">{event.type} &middot; {formatClawTime(event.timestamp)}</span>
+                <span class="history-title">{formatEventTitle(event)}</span>
+                <span class="claw-event-meta">{formatEventMeta(event)}</span>
               </div>
-            </div>
+            </button>
           {/each}
         {/if}
       </div>
@@ -896,21 +962,109 @@
     box-shadow: 0 0 4px rgba(74, 222, 128, 0.5);
   }
 
+  /* ─── Trigger List ─── */
+  .claw-trigger-list {
+    display: flex;
+    flex-direction: column;
+    padding: 4px 12px;
+    gap: 2px;
+  }
+
+  .claw-trigger-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+  }
+
+  .claw-trigger-toggle {
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    text-align: left;
+    transition: background 0.15s ease;
+  }
+
+  .claw-trigger-toggle:hover {
+    background: var(--bg-hover);
+  }
+
+  .claw-trigger-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-muted);
+    opacity: 0.4;
+    transition: all 0.15s ease;
+  }
+
+  .claw-trigger-dot.claw-trigger-on {
+    background: #4ade80;
+    opacity: 1;
+    box-shadow: 0 0 4px rgba(74, 222, 128, 0.3);
+  }
+
+  .claw-trigger-label {
+    flex: 1;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .claw-trigger-status {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  /* ─── Overview: Stats ─── */
   .claw-stats-mini {
-    padding: 2px 12px 6px;
+    display: flex;
+    flex-direction: column;
+    padding: 4px 12px;
+    gap: 2px;
+  }
+
+  .claw-stat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 3px 0;
+  }
+
+  .claw-stat-label {
     font-size: 11px;
     color: var(--text-muted);
   }
 
-  .claw-stats-sep {
-    margin: 0 4px;
+  .claw-stat-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
   }
 
+  .claw-section-label {
+    padding: 4px 12px 2px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+
+  /* ─── Events Sidebar ─── */
   .claw-event-item {
     display: flex;
     align-items: center;
     gap: 8px;
-    cursor: default;
+    cursor: pointer;
   }
 
   .claw-event-item.claw-suppressed {

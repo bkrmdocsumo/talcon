@@ -115,6 +115,15 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 		return nil, fmt.Errorf("load session: %w", err)
 	}
 
+	// Repair any dangling tool_use blocks from interrupted previous turns.
+	history, synthMsgs := repairDanglingToolUse(history)
+	if len(synthMsgs) > 0 {
+		log.Printf("[agent] repaired %d dangling tool_use block(s) in session %s", len(synthMsgs), sessionID)
+		if err := deps.SessionMgr.Append(sessionID, synthMsgs...); err != nil {
+			log.Printf("[agent] warning: failed to persist session repair: %v", err)
+		}
+	}
+
 	// Load system prompt from Master_prompt file.
 	systemPrompt, err := loadPrompt(deps.BaseDir, agentCfg.PromptPath)
 	if err != nil {
@@ -313,6 +322,15 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 	history, err := deps.SessionMgr.Load(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("load session: %w", err)
+	}
+
+	// Repair any dangling tool_use blocks from interrupted previous turns.
+	history, synthMsgs := repairDanglingToolUse(history)
+	if len(synthMsgs) > 0 {
+		log.Printf("[agent] repaired %d dangling tool_use block(s) in session %s", len(synthMsgs), sessionID)
+		if err := deps.SessionMgr.Append(sessionID, synthMsgs...); err != nil {
+			log.Printf("[agent] warning: failed to persist session repair: %v", err)
+		}
 	}
 
 	// Load system prompt from Master_prompt file.

@@ -95,12 +95,21 @@ func (a *App) SetClawConfig(cfg ClawConfig) {
 		return
 	}
 
-	if cfg.HeartbeatEnabled && !a.clawHeartbeat.IsRunning() {
-		if cfg.HeartbeatInterval > 0 {
-			a.clawHeartbeat.SetInterval(time.Duration(cfg.HeartbeatInterval) * time.Minute)
+	newInterval := time.Duration(cfg.HeartbeatInterval) * time.Minute
+	intervalChanged := cfg.HeartbeatInterval > 0 && newInterval != a.clawHeartbeat.Interval()
+
+	if cfg.HeartbeatEnabled {
+		if intervalChanged && a.clawHeartbeat.IsRunning() {
+			a.clawHeartbeat.Stop()
+			a.clawHeartbeat.SetInterval(newInterval)
+			a.clawHeartbeat.Start()
+		} else if !a.clawHeartbeat.IsRunning() {
+			if cfg.HeartbeatInterval > 0 {
+				a.clawHeartbeat.SetInterval(newInterval)
+			}
+			a.clawHeartbeat.Start()
 		}
-		a.clawHeartbeat.Start()
-	} else if !cfg.HeartbeatEnabled && a.clawHeartbeat.IsRunning() {
+	} else if a.clawHeartbeat.IsRunning() {
 		a.clawHeartbeat.Stop()
 	}
 }
@@ -164,6 +173,45 @@ func (a *App) FireHeartbeatNow() {
 	if a.clawHeartbeat != nil {
 		a.clawHeartbeat.FireNow()
 	}
+}
+
+// GetClawEventChat loads the full conversation history for a claw event's
+// session, returning it in the same HistoryMessage format used by LoadSession.
+// This lets the frontend show the complete chat (user messages, assistant
+// responses, tool calls, files) when the user expands an event.
+func (a *App) GetClawEventChat(sessionID string) ([]HistoryMessage, error) {
+	if a.deps.SessionMgr == nil {
+		return []HistoryMessage{}, nil
+	}
+
+	msgs, err := a.deps.SessionMgr.Load(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("load claw session: %w", err)
+	}
+
+	var result []HistoryMessage
+	for _, msg := range msgs {
+		parsed := parseMessageForFrontend(msg)
+		if parsed == nil {
+			continue
+		}
+
+		if parsed.Role == "assistant" && len(result) > 0 && result[len(result)-1].Role == "assistant" {
+			prev := &result[len(result)-1]
+			prev.Steps = append(prev.Steps, parsed.Steps...)
+			if parsed.Content != "" {
+				if prev.Content != "" {
+					prev.Content += parsed.Content
+				} else {
+					prev.Content = parsed.Content
+				}
+			}
+		} else {
+			result = append(result, *parsed)
+		}
+	}
+
+	return result, nil
 }
 
 func truncateStr(s string, max int) string {

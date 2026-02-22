@@ -58,7 +58,7 @@
     <!-- Placeholder for window controls area on macOS -->
   </div>
 
-  <!-- Center tabs (Chat first, then Agents, then Flow) -->
+  <!-- Center tabs (Chat, Agents, Claw, Flow) -->
   <nav class="header-tabs">
     <button
       class="tab"
@@ -86,6 +86,16 @@
     </button>
     <button
       class="tab"
+      class:active={activeTab === 'claw'}
+      on:click={() => setTab('claw')}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </svg>
+      Claw
+    </button>
+    <button
+      class="tab"
       class:active={activeTab === 'flow'}
       on:click={() => setTab('flow')}
     >
@@ -94,16 +104,6 @@
         <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
       </svg>
       Flow
-    </button>
-    <button
-      class="tab"
-      class:active={activeTab === 'claw'}
-      on:click={() => setTab('claw')}
-    >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
-        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-      </svg>
-      Claw
     </button>
   </nav>
 

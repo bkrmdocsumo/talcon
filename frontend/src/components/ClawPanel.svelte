@@ -1,12 +1,62 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, tick } from 'svelte';
+  import { loadClawEventChat } from '../lib/stores/clawStore.js';
+  import { renderMarkdown } from '../lib/markdown.js';
 
   export let events = [];
   export let config = {};
   export let stats = {};
   export let crons = [];
+  export let activeSubTab = 'overview';
+  export let focusedEventId = null;
 
   const dispatch = createEventDispatcher();
+
+  let eventRefs = {};
+
+  // ─── Expand/collapse state ───
+  let expandedEvents = {};
+  let eventChats = {};
+  let loadingChats = {};
+
+  async function toggleExpand(event) {
+    const id = event.id;
+    if (expandedEvents[id]) {
+      expandedEvents[id] = false;
+      expandedEvents = expandedEvents;
+      return;
+    }
+    if (!eventChats[id] && event.session_id) {
+      loadingChats[id] = true;
+      loadingChats = loadingChats;
+      const messages = await loadClawEventChat(event.session_id);
+      eventChats[id] = messages;
+      eventChats = eventChats;
+      loadingChats[id] = false;
+      loadingChats = loadingChats;
+    }
+    expandedEvents[id] = true;
+    expandedEvents = expandedEvents;
+  }
+
+  function formatToolLabel(name) {
+    if (!name) return '';
+    return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  $: if (focusedEventId && activeSubTab === 'events') {
+    tick().then(() => {
+      const el = eventRefs[focusedEventId];
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => dispatch('clearFocusedEvent'), 2000);
+      }
+    });
+  }
+
+  function setSubTab(tab) {
+    dispatch('subTabChange', { tab });
+  }
 
   // ─── Local state ───
   let manualMessage = '';
@@ -59,6 +109,15 @@
     });
   }
 
+  function handleIntervalChange(e) {
+    const mins = parseInt(e.target.value, 10);
+    if (!mins || mins < 1) return;
+    dispatch('configChange', {
+      ...config,
+      heartbeat_interval_minutes: mins,
+    });
+  }
+
   function handleFireHeartbeat() {
     dispatch('fireHeartbeat');
   }
@@ -94,6 +153,22 @@
     }
   }
 
+  const sourceTitleMap = {
+    'lifecycle:startup': 'App Started',
+    'lifecycle:shutdown': 'App Shutdown',
+    'heartbeat-ticker': 'Heartbeat Check',
+    'manual:ui': 'Manual Event',
+  };
+
+  function formatSource(source) {
+    if (sourceTitleMap[source]) return sourceTitleMap[source];
+    if (source === 'scheduler') return 'Scheduled Task';
+    if (source && !source.includes(':')) {
+      return source.charAt(0).toUpperCase() + source.slice(1);
+    }
+    return source || '';
+  }
+
   function describeSchedule(expr) {
     const parts = expr.split(/\s+/);
     if (parts.length !== 5) return expr;
@@ -113,198 +188,315 @@
 </script>
 
 <div class="claw-panel">
-  <!-- Stats Bar -->
-  <div class="stats-bar">
-    <div class="stat-item">
-      <span class="stat-value">{stats.total_events || 0}</span>
-      <span class="stat-label">Total Events</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-value">{stats.events_today || 0}</span>
-      <span class="stat-label">Today</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-value">{stats.last_heartbeat ? formatTime(stats.last_heartbeat) : 'Never'}</span>
-      <span class="stat-label">Last Heartbeat</span>
-    </div>
-    <div class="stat-item" class:stat-active={stats.gateway_active}>
-      <span class="stat-dot" class:active={stats.gateway_active}></span>
-      <span class="stat-label">{stats.gateway_active ? 'Gateway Active' : 'Gateway Off'}</span>
-    </div>
+  <!-- Sub-tab Navigation -->
+  <div class="sub-tabs">
+    <button
+      class="sub-tab"
+      class:sub-tab-active={activeSubTab === 'overview'}
+      on:click={() => setSubTab('overview')}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+      </svg>
+      Overview
+    </button>
+    <button
+      class="sub-tab"
+      class:sub-tab-active={activeSubTab === 'crons'}
+      on:click={() => setSubTab('crons')}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d={typeIcons.cron}/>
+      </svg>
+      Crons
+      {#if crons.length > 0}
+        <span class="sub-tab-badge">{crons.length}</span>
+      {/if}
+    </button>
+    <button
+      class="sub-tab"
+      class:sub-tab-active={activeSubTab === 'events'}
+      on:click={() => setSubTab('events')}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d={typeIcons.webhook}/>
+      </svg>
+      Events
+      {#if events.length > 0}
+        <span class="sub-tab-badge">{events.length}</span>
+      {/if}
+    </button>
   </div>
 
-  <!-- Trigger Controls -->
-  <div class="trigger-controls">
-    <h3 class="section-title">Triggers</h3>
-    <div class="trigger-grid">
-      <button
-        class="trigger-card"
-        class:trigger-active={config.heartbeat_enabled}
-        on:click={handleToggleHeartbeat}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d={typeIcons.heartbeat}/>
-        </svg>
-        <span class="trigger-name">Heartbeat</span>
-        <span class="trigger-status">{config.heartbeat_enabled ? 'ON' : 'OFF'}</span>
-        {#if config.heartbeat_enabled}
-          <span class="trigger-detail">Every {config.heartbeat_interval_minutes || 30}m</span>
-        {/if}
-      </button>
-
-      <button class="trigger-card trigger-active" disabled>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d={typeIcons.message}/>
-        </svg>
-        <span class="trigger-name">Messages</span>
-        <span class="trigger-status">ON</span>
-      </button>
-
-      <button class="trigger-card trigger-active" disabled>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d={typeIcons.cron}/>
-        </svg>
-        <span class="trigger-name">Crons</span>
-        <span class="trigger-status">ON</span>
-      </button>
-
-      <button class="trigger-card trigger-active" disabled>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d={typeIcons.hook}/>
-        </svg>
-        <span class="trigger-name">Hooks</span>
-        <span class="trigger-status">ON</span>
-      </button>
-
-      <button class="trigger-card trigger-active" disabled>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d={typeIcons.webhook}/>
-        </svg>
-        <span class="trigger-name">Webhooks</span>
-        <span class="trigger-status">ON</span>
-      </button>
-    </div>
-  </div>
-
-  <!-- Cron Tasks -->
-  <div class="cron-tasks">
-    <h3 class="section-title">Cron Tasks</h3>
-    <div class="cron-form">
-      <input
-        type="text"
-        class="cron-schedule-input"
-        placeholder="*/5 * * * *"
-        bind:value={cronSchedule}
-        on:keydown={handleCronKeydown}
-      />
-      <input
-        type="text"
-        class="cron-message-input"
-        placeholder="Message to send on schedule..."
-        bind:value={cronMessage}
-        on:keydown={handleCronKeydown}
-      />
-      <button class="action-btn cron-add-btn" on:click={handleAddCron} disabled={!cronSchedule.trim() || !cronMessage.trim()}>
-        Add
-      </button>
-    </div>
-    {#if cronError}
-      <div class="cron-error">{cronError}</div>
-    {/if}
-    {#if crons.length > 0}
-      <div class="cron-list">
-        {#each crons as cron (cron.id)}
-          <div class="cron-item">
-            <div class="cron-item-info">
-              <span class="cron-item-schedule">{cron.schedule}</span>
-              <span class="cron-item-desc">{describeSchedule(cron.schedule)}</span>
-            </div>
-            <div class="cron-item-message">{cron.message}</div>
-            <button class="cron-remove-btn" on:click={() => handleRemoveCron(cron.id)} title="Remove cron task">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  <!-- Tab Content -->
+  <div class="tab-content">
+    {#if activeSubTab === 'overview'}
+      <!-- Trigger Controls -->
+      <div class="trigger-controls">
+        <h3 class="section-title">Triggers</h3>
+        <div class="trigger-grid">
+          <div class="trigger-card heartbeat-card" class:trigger-active={config.heartbeat_enabled}>
+            <button class="heartbeat-toggle" on:click={handleToggleHeartbeat}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d={typeIcons.heartbeat}/>
               </svg>
+              <span class="trigger-name">Heartbeat</span>
+              <span class="trigger-status">{config.heartbeat_enabled ? 'ON' : 'OFF'}</span>
+            </button>
+            {#if config.heartbeat_enabled}
+              <div class="heartbeat-interval" on:click|stopPropagation>
+                <span class="interval-label">Every</span>
+                <select class="interval-select" value={config.heartbeat_interval_minutes || 1} on:change={handleIntervalChange}>
+                  <option value={1}>1 min</option>
+                  <option value={5}>5 min</option>
+                  <option value={10}>10 min</option>
+                  <option value={15}>15 min</option>
+                  <option value={30}>30 min</option>
+                  <option value={60}>1 hour</option>
+                  <option value={120}>2 hours</option>
+                </select>
+              </div>
+            {/if}
+          </div>
+
+          <button class="trigger-card trigger-active" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d={typeIcons.message}/>
+            </svg>
+            <span class="trigger-name">Messages</span>
+            <span class="trigger-status">ON</span>
+          </button>
+
+          <button class="trigger-card trigger-active" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d={typeIcons.cron}/>
+            </svg>
+            <span class="trigger-name">Crons</span>
+            <span class="trigger-status">ON</span>
+          </button>
+
+          <button class="trigger-card trigger-active" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d={typeIcons.hook}/>
+            </svg>
+            <span class="trigger-name">Hooks</span>
+            <span class="trigger-status">ON</span>
+          </button>
+
+          <button class="trigger-card trigger-active" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d={typeIcons.webhook}/>
+            </svg>
+            <span class="trigger-name">Webhooks</span>
+            <span class="trigger-status">ON</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="quick-actions">
+        <h3 class="section-title">Quick Actions</h3>
+        <div class="action-row">
+          <button class="action-btn" on:click={handleFireHeartbeat}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d={typeIcons.heartbeat}/>
+            </svg>
+            Fire Heartbeat
+          </button>
+
+          <div class="manual-push">
+            <select bind:value={manualEventType} class="event-type-select">
+              <option value="message">Message</option>
+              <option value="hook">Hook</option>
+              <option value="heartbeat">Heartbeat</option>
+            </select>
+            <input
+              type="text"
+              class="manual-input"
+              placeholder="Push a manual event..."
+              bind:value={manualMessage}
+              on:keydown={handleKeydown}
+            />
+            <button class="action-btn send-btn" on:click={handleSendManual} disabled={!manualMessage.trim()}>
+              Send
             </button>
           </div>
-        {/each}
+        </div>
       </div>
-    {:else}
-      <div class="cron-empty">No cron tasks yet. Add one above to schedule periodic agent prompts.</div>
-    {/if}
-  </div>
 
-  <!-- Quick Actions -->
-  <div class="quick-actions">
-    <h3 class="section-title">Quick Actions</h3>
-    <div class="action-row">
-      <button class="action-btn" on:click={handleFireHeartbeat}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d={typeIcons.heartbeat}/>
-        </svg>
-        Fire Heartbeat
-      </button>
-
-      <div class="manual-push">
-        <select bind:value={manualEventType} class="event-type-select">
-          <option value="message">Message</option>
-          <option value="hook">Hook</option>
-          <option value="heartbeat">Heartbeat</option>
-        </select>
-        <input
-          type="text"
-          class="manual-input"
-          placeholder="Push a manual event..."
-          bind:value={manualMessage}
-          on:keydown={handleKeydown}
-        />
-        <button class="action-btn send-btn" on:click={handleSendManual} disabled={!manualMessage.trim()}>
-          Send
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Event Feed -->
-  <div class="event-feed">
-    <h3 class="section-title">Event Feed</h3>
-    {#if events.length === 0}
-      <div class="empty-feed">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
-          <path d={typeIcons.webhook}/>
-        </svg>
-        <p>No events yet. The gateway is listening for triggers.</p>
-      </div>
-    {:else}
-      <div class="event-list">
-        {#each events as event (event.id)}
-          <div class="event-item" class:event-suppressed={event.status === 'suppressed'}>
-            <div class="event-header">
-              <div class="event-type-badge" style="--badge-color: {statusColors[event.status] || 'var(--text-muted)'}">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <path d={typeIcons[event.type] || typeIcons.message}/>
-                </svg>
-                <span>{typeLabels[event.type] || event.type}</span>
+    {:else if activeSubTab === 'crons'}
+      <!-- Cron Tasks -->
+      <div class="cron-tasks">
+        <div class="cron-form">
+          <input
+            type="text"
+            class="cron-schedule-input"
+            placeholder="*/5 * * * *"
+            bind:value={cronSchedule}
+            on:keydown={handleCronKeydown}
+          />
+          <input
+            type="text"
+            class="cron-message-input"
+            placeholder="Message to send on schedule..."
+            bind:value={cronMessage}
+            on:keydown={handleCronKeydown}
+          />
+          <button class="action-btn cron-add-btn" on:click={handleAddCron} disabled={!cronSchedule.trim() || !cronMessage.trim()}>
+            Add
+          </button>
+        </div>
+        {#if cronError}
+          <div class="cron-error">{cronError}</div>
+        {/if}
+        {#if crons.length > 0}
+          <div class="cron-list">
+            {#each crons as cron (cron.id)}
+              <div class="cron-item">
+                <div class="cron-item-info">
+                  <span class="cron-item-schedule">{cron.schedule}</span>
+                  <span class="cron-item-desc">{describeSchedule(cron.schedule)}</span>
+                </div>
+                <div class="cron-item-message">{cron.message}</div>
+                <button class="cron-remove-btn" on:click={() => handleRemoveCron(cron.id)} title="Remove cron task">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
               </div>
-              <span class="event-source">{event.source}</span>
-              <span class="event-time">{formatTime(event.timestamp)}</span>
-              <span class="event-status-dot" style="background: {statusColors[event.status] || 'var(--text-muted)'}"></span>
-            </div>
-
-            {#if event.payload && event.status !== 'suppressed'}
-              <div class="event-payload">{event.payload.length > 120 ? event.payload.slice(0, 120) + '...' : event.payload}</div>
-            {/if}
-
-            {#if event.result && event.status === 'completed'}
-              <div class="event-result">{event.result}</div>
-            {:else if event.status === 'suppressed'}
-              <div class="event-result event-ok">Heartbeat OK — no action needed</div>
-            {:else if event.status === 'failed'}
-              <div class="event-result event-error">{event.result}</div>
-            {:else if event.status === 'processing'}
-              <div class="event-result event-processing">Processing...</div>
-            {/if}
+            {/each}
           </div>
-        {/each}
+        {:else}
+          <div class="cron-empty">No cron tasks yet. Add one above to schedule periodic agent prompts.</div>
+        {/if}
+      </div>
+
+    {:else if activeSubTab === 'events'}
+      <!-- Event Feed -->
+      <div class="event-feed">
+        {#if events.length === 0}
+          <div class="empty-feed">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
+              <path d={typeIcons.webhook}/>
+            </svg>
+            <p>No events yet. The gateway is listening for triggers.</p>
+          </div>
+        {:else}
+          <div class="event-list">
+            {#each events as event (event.id)}
+              <div
+                class="event-item"
+                class:event-suppressed={event.status === 'suppressed'}
+                class:event-focused={focusedEventId === event.id}
+                class:event-expanded={expandedEvents[event.id]}
+                bind:this={eventRefs[event.id]}
+              >
+                <div class="event-header">
+                  <div class="event-type-badge" style="--badge-color: {statusColors[event.status] || 'var(--text-muted)'}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d={typeIcons[event.type] || typeIcons.message}/>
+                    </svg>
+                    <span>{typeLabels[event.type] || event.type}</span>
+                  </div>
+                  <span class="event-source">{formatSource(event.source)}</span>
+                  <span class="event-time">{formatTime(event.timestamp)}</span>
+                  <span class="event-status-dot" style="background: {statusColors[event.status] || 'var(--text-muted)'}"></span>
+                  {#if event.session_id && event.status !== 'suppressed' && event.status !== 'processing'}
+                    <button class="event-expand-btn" on:click={() => toggleExpand(event)} title={expandedEvents[event.id] ? 'Collapse' : 'Expand full chat'}>
+                      {#if loadingChats[event.id]}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spin">
+                          <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                        </svg>
+                      {:else}
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class:expanded-icon={expandedEvents[event.id]}>
+                          <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                      {/if}
+                    </button>
+                  {/if}
+                </div>
+
+                {#if !expandedEvents[event.id]}
+                  {#if event.payload && event.status !== 'suppressed'}
+                    <div class="event-payload">{event.payload.length > 120 ? event.payload.slice(0, 120) + '...' : event.payload}</div>
+                  {/if}
+
+                  {#if event.result && event.status === 'completed'}
+                    <div class="event-result">{event.result}</div>
+                  {:else if event.status === 'suppressed'}
+                    <div class="event-result event-ok">Heartbeat OK — no action needed</div>
+                  {:else if event.status === 'failed'}
+                    <div class="event-result event-error">{event.result}</div>
+                  {:else if event.status === 'processing'}
+                    <div class="event-result event-processing">Processing...</div>
+                  {/if}
+                {:else}
+                  <!-- Expanded: full conversation -->
+                  <div class="event-chat">
+                    {#if eventChats[event.id] && eventChats[event.id].length > 0}
+                      {#each eventChats[event.id] as msg, i}
+                        <div class="chat-msg chat-msg-{msg.role}">
+                          <div class="chat-msg-role">{msg.role === 'user' ? 'Input' : 'Response'}</div>
+
+                          {#if msg.files && msg.files.length > 0}
+                            <div class="chat-msg-files">
+                              {#each msg.files as file}
+                                <span class="chat-file-chip">
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                                  </svg>
+                                  {file.name}
+                                </span>
+                              {/each}
+                            </div>
+                          {/if}
+
+                          {#if msg.steps && msg.steps.length > 0}
+                            {#each msg.steps as step, si}
+                              {#if step.type === 'thinking'}
+                                <details class="chat-step-details">
+                                  <summary class="chat-step-summary chat-step-thinking">Thinking</summary>
+                                  <div class="chat-step-content">{step.content}</div>
+                                </details>
+                              {:else if step.type === 'tool_call'}
+                                <details class="chat-step-details">
+                                  <summary class="chat-step-summary chat-step-tool">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                                    </svg>
+                                    {formatToolLabel(step.tool_name)}
+                                  </summary>
+                                  {#if step.tool_input}
+                                    <pre class="chat-step-code">{step.tool_input}</pre>
+                                  {/if}
+                                </details>
+                              {:else if step.type === 'tool_result'}
+                                <details class="chat-step-details">
+                                  <summary class="chat-step-summary chat-step-result">
+                                    Result: {formatToolLabel(step.tool_name)}
+                                  </summary>
+                                  <pre class="chat-step-code">{step.content}</pre>
+                                </details>
+                              {/if}
+                            {/each}
+                          {/if}
+
+                          {#if msg.content}
+                            <div class="chat-msg-content">{@html renderMarkdown(msg.content)}</div>
+                          {/if}
+                        </div>
+                      {/each}
+                    {:else if event.status === 'failed'}
+                      <div class="event-result event-error">{event.result}</div>
+                    {:else}
+                      <div class="chat-msg-empty">No conversation data available.</div>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
@@ -334,6 +526,68 @@
     border-radius: 3px;
   }
 
+  /* ─── Sub-tabs ─── */
+  .sub-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+  }
+
+  .sub-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    justify-content: center;
+    padding: 8px 14px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .sub-tab:hover:not(.sub-tab-active) {
+    color: var(--text-secondary);
+    background: var(--bg-tertiary);
+  }
+
+  .sub-tab-active {
+    background: var(--bg-tertiary);
+    border-color: var(--border);
+    color: var(--text-primary);
+  }
+
+  .sub-tab-active svg {
+    color: var(--accent);
+  }
+
+  .sub-tab-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tab-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-height: 0;
+  }
+
   /* ─── Section Title ─── */
   .section-title {
     font-size: 11px;
@@ -342,53 +596,6 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: 10px;
-  }
-
-  /* ─── Stats Bar ─── */
-  .stats-bar {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .stat-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 12px 20px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    flex: 1;
-    min-width: 100px;
-  }
-
-  .stat-value {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-primary);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .stat-label {
-    font-size: 11px;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
-  .stat-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    transition: all 0.2s ease;
-  }
-
-  .stat-dot.active {
-    background: #4ade80;
-    box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
   }
 
   /* ─── Trigger Controls ─── */
@@ -402,8 +609,10 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 6px;
     padding: 14px 12px;
+    height: 120px;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -447,6 +656,54 @@
   .trigger-detail {
     font-size: 10px;
     color: var(--text-muted);
+  }
+
+  .heartbeat-card {
+    cursor: default;
+  }
+
+  .heartbeat-toggle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    color: inherit;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .heartbeat-interval {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .interval-label {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .interval-select {
+    padding: 2px 4px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-family: var(--font-sans);
+    cursor: pointer;
+    outline: none;
+  }
+
+  .interval-select:focus {
+    border-color: var(--accent);
   }
 
   /* ─── Cron Tasks ─── */
@@ -638,6 +895,8 @@
     font-family: var(--font-sans);
     cursor: pointer;
     outline: none;
+    width: 100px;
+    flex-shrink: 0;
   }
 
   .event-type-select:focus {
@@ -707,6 +966,18 @@
 
   .event-item.event-suppressed {
     opacity: 0.5;
+  }
+
+  .event-item.event-focused {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(14, 240, 216, 0.15);
+    animation: focus-fade 2s ease-out forwards;
+  }
+
+  @keyframes focus-fade {
+    0% { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(14, 240, 216, 0.15); }
+    70% { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 12px rgba(14, 240, 216, 0.15); }
+    100% { border-color: var(--border); box-shadow: none; }
   }
 
   .event-header {
@@ -782,5 +1053,194 @@
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
+  }
+
+  /* ─── Expand button ─── */
+  .event-expand-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s ease;
+  }
+
+  .event-expand-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border);
+    color: var(--text-secondary);
+  }
+
+  .expanded-icon {
+    transform: rotate(180deg);
+  }
+
+  .event-expanded {
+    border-color: var(--border-light);
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .spin {
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ─── Expanded chat view ─── */
+  .event-chat {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+
+  .chat-msg {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .chat-msg-role {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+  }
+
+  .chat-msg-user .chat-msg-role {
+    color: var(--accent);
+  }
+
+  .chat-msg-content {
+    font-size: 12px;
+    color: var(--text-primary);
+    line-height: 1.6;
+    word-break: break-word;
+  }
+
+  .chat-msg-content :global(p) {
+    margin: 4px 0;
+  }
+
+  .chat-msg-content :global(pre) {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 11px;
+    overflow-x: auto;
+    margin: 6px 0;
+  }
+
+  .chat-msg-content :global(code) {
+    font-size: 11px;
+    font-family: var(--font-mono, monospace);
+  }
+
+  .chat-msg-content :global(ul),
+  .chat-msg-content :global(ol) {
+    padding-left: 18px;
+    margin: 4px 0;
+  }
+
+  .chat-msg-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .chat-file-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+    border-radius: 5px;
+    font-size: 10px;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  /* ─── Step details (thinking, tool calls) ─── */
+  .chat-step-details {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 2px 0;
+  }
+
+  .chat-step-summary {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+    color: var(--text-muted);
+    background: var(--bg-primary);
+    transition: background 0.15s ease;
+  }
+
+  .chat-step-summary:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+  }
+
+  .chat-step-thinking {
+    color: #a78bfa;
+  }
+
+  .chat-step-tool {
+    color: var(--accent);
+  }
+
+  .chat-step-result {
+    color: #4ade80;
+  }
+
+  .chat-step-content {
+    padding: 6px 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--bg-primary);
+  }
+
+  .chat-step-code {
+    padding: 6px 8px;
+    font-size: 10px;
+    font-family: var(--font-mono, monospace);
+    color: var(--text-secondary);
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 200px;
+    overflow-y: auto;
+    margin: 0;
+    background: var(--bg-primary);
+  }
+
+  .chat-msg-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 12px 0;
   }
 </style>

@@ -9,6 +9,7 @@ import {
   AddClawCron,
   ListClawCrons,
   RemoveClawCron,
+  GetClawEventChat,
 } from '../../../wailsjs/go/main/App';
 import { EventsOn, EventsOff } from '../../../wailsjs/runtime/runtime';
 
@@ -31,6 +32,12 @@ export const clawStats = writable({
 
 // ─── Claw cron tasks ───
 export const clawCrons = writable([]);
+
+// ─── Shared sub-tab state (synced between ClawPanel + Sidebar) ───
+export const clawActiveSubTab = writable('overview');
+
+// ─── Focused event ID (set when clicking a sidebar activity item) ───
+export const clawFocusedEventId = writable(null);
 
 // Derived: only non-hidden events for the feed
 export const visibleClawEvents = derived(clawEvents, ($events) =>
@@ -165,6 +172,18 @@ export async function removeClawCron(id) {
   } catch (err) {
     console.error('Failed to remove claw cron:', err);
     throw err;
+  }
+}
+
+// ─── Event chat loading (expand) ───
+
+export async function loadClawEventChat(sessionID) {
+  try {
+    const messages = await GetClawEventChat(sessionID);
+    return messages || [];
+  } catch (err) {
+    console.error('Failed to load claw event chat:', err);
+    return [];
   }
 }
 

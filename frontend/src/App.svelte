@@ -45,6 +45,7 @@
 
   import {
     clawEvents, clawConfig, clawStats, visibleClawEvents, clawCrons,
+    clawActiveSubTab, clawFocusedEventId,
     initClawData, destroyClawListener,
     updateClawConfig, pushManualClawEvent, fireHeartbeat,
     addClawCron, removeClawCron,
@@ -272,6 +273,14 @@
     updateClawConfig(e.detail);
   }
 
+  function handleClawToggleHeartbeat() {
+    const cfg = $clawConfig;
+    updateClawConfig({
+      ...cfg,
+      heartbeat_enabled: !cfg.heartbeat_enabled,
+    });
+  }
+
   function handleClawFireHeartbeat() {
     fireHeartbeat();
   }
@@ -371,6 +380,12 @@
     bgStreamingAgents={$backgroundAgentStreamingSessions}
     clawEvents={$clawEvents}
     clawStats={$clawStats}
+    clawConfig={$clawConfig}
+    on:clawSubTabChange={(e) => {
+      clawActiveSubTab.set(e.detail.tab);
+      clawFocusedEventId.set(e.detail.eventId || null);
+    }}
+    on:clawToggleHeartbeat={handleClawToggleHeartbeat}
     on:newChat={handleNewSession}
     on:selectChat={handleSelectChat}
     on:deleteChat={handleDeleteChat}
@@ -415,6 +430,10 @@
         config={$clawConfig}
         stats={$clawStats}
         crons={$clawCrons}
+        activeSubTab={$clawActiveSubTab}
+        focusedEventId={$clawFocusedEventId}
+        on:subTabChange={(e) => clawActiveSubTab.set(e.detail.tab)}
+        on:clearFocusedEvent={() => clawFocusedEventId.set(null)}
         on:configChange={handleClawConfigChange}
         on:fireHeartbeat={handleClawFireHeartbeat}
         on:pushEvent={handleClawPushEvent}
