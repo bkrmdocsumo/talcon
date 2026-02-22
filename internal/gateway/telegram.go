@@ -79,7 +79,7 @@ func RunTelegram(ctx context.Context, cfg *config.Config, deps agent.Deps, notif
 			return
 		case res := <-ch:
 			if res.err != nil {
-				log.Printf("[telegram] getUpdates error: %v", res.err)
+				// log.Printf("[telegram] getUpdates error: %v", res.err)
 				// Wait before retrying, but respect context cancellation.
 				select {
 				case <-ctx.Done():

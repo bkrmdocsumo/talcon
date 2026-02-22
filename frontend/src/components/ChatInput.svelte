@@ -419,7 +419,7 @@
     {/if}
 
     {#if showCommandMenu && filteredCommands.length > 0}
-      <div class="cmd-menu" bind:this={commandMenuEl} on:click|stopPropagation on:keydown|stopPropagation role="listbox">
+      <div class="cmd-menu" bind:this={commandMenuEl} on:click|stopPropagation on:keydown|stopPropagation role="listbox" tabindex="-1">
         {#each filteredCommands as cmd, i (cmd.id)}
           <button
             class="cmd-option"
@@ -504,7 +504,7 @@
           </button>
 
           {#if showModelMenu}
-            <div class="model-menu" on:click|stopPropagation on:keydown|stopPropagation role="menu">
+            <div class="model-menu" on:click|stopPropagation on:keydown|stopPropagation role="menu" tabindex="-1">
               {#each filteredModels as model}
                 <button
                   class="model-option"

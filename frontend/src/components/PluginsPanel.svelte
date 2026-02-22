@@ -297,8 +297,8 @@
         {#if promptEditing}
           <div class="edit-form">
             <div class="edit-field edit-field-body prompt-editor-field">
-              <label>Content (Markdown)</label>
-              <textarea bind:value={promptBody} disabled={promptSaving}></textarea>
+              <label for="prompt-content">Content (Markdown)</label>
+              <textarea id="prompt-content" bind:value={promptBody} disabled={promptSaving}></textarea>
             </div>
             <div class="edit-actions">
               <button class="btn-cancel" on:click={handleCancelPromptEdit}>Cancel</button>
@@ -352,8 +352,8 @@
       {#if memAdding}
         <div class="detail-header"><h2 class="detail-title">New Memory</h2></div>
         <div class="edit-form">
-          <div class="edit-field"><label>Name</label><input type="text" bind:value={memAddName} placeholder="e.g. user-preferences" disabled={memAddSaving} /><span class="field-hint">No spaces. Use hyphens or underscores (e.g. project-context)</span></div>
-          <div class="edit-field edit-field-body"><label>Content (Markdown)</label><textarea bind:value={memAddBody} placeholder="Write memory content here..." disabled={memAddSaving}></textarea></div>
+          <div class="edit-field"><label for="mem-add-name">Name</label><input id="mem-add-name" type="text" bind:value={memAddName} placeholder="e.g. user-preferences" disabled={memAddSaving} /><span class="field-hint">No spaces. Use hyphens or underscores (e.g. project-context)</span></div>
+          <div class="edit-field edit-field-body"><label for="mem-add-body">Content (Markdown)</label><textarea id="mem-add-body" bind:value={memAddBody} placeholder="Write memory content here..." disabled={memAddSaving}></textarea></div>
           {#if memAddError}<div class="edit-error">{memAddError}</div>{/if}
           <div class="edit-actions">
             <button class="btn-cancel" on:click={handleCancelMemAdd}>Cancel</button>
@@ -377,7 +377,7 @@
         </div>
         {#if memEditing}
           <div class="edit-form">
-            <div class="edit-field edit-field-body"><label>Content (Markdown)</label><textarea bind:value={memEditBody} disabled={memSaving}></textarea></div>
+            <div class="edit-field edit-field-body"><label for="mem-edit-body">Content (Markdown)</label><textarea id="mem-edit-body" bind:value={memEditBody} disabled={memSaving}></textarea></div>
             {#if memEditError}<div class="edit-error">{memEditError}</div>{/if}
             <div class="edit-actions">
               <button class="btn-cancel" on:click={handleCancelMemEdit}>Cancel</button>
@@ -435,9 +435,9 @@
       {#if adding}
         <div class="detail-header"><h2 class="detail-title">New {$activeSection === 'commands' ? 'Command' : 'Skill'}</h2></div>
         <div class="edit-form">
-          <div class="edit-field"><label>Name</label><input type="text" bind:value={addName} placeholder="e.g. analysis-bs" disabled={addSaving} /><span class="field-hint">No spaces. Use hyphens or underscores (e.g. analysis_bs)</span></div>
-          <div class="edit-field"><label>Description</label><input type="text" bind:value={addDescription} placeholder="Short description..." disabled={addSaving} /></div>
-          <div class="edit-field edit-field-body"><label>Content (Markdown)</label><textarea bind:value={addBody} placeholder="# Instructions..." disabled={addSaving}></textarea></div>
+          <div class="edit-field"><label for="plugin-add-name">Name</label><input id="plugin-add-name" type="text" bind:value={addName} placeholder="e.g. analysis-bs" disabled={addSaving} /><span class="field-hint">No spaces. Use hyphens or underscores (e.g. analysis_bs)</span></div>
+          <div class="edit-field"><label for="plugin-add-desc">Description</label><input id="plugin-add-desc" type="text" bind:value={addDescription} placeholder="Short description..." disabled={addSaving} /></div>
+          <div class="edit-field edit-field-body"><label for="plugin-add-body">Content (Markdown)</label><textarea id="plugin-add-body" bind:value={addBody} placeholder="# Instructions..." disabled={addSaving}></textarea></div>
           {#if addError}<div class="edit-error">{addError}</div>{/if}
           <div class="edit-actions">
             <button class="btn-cancel" on:click={handleCancelAdd}>Cancel</button>
@@ -464,9 +464,9 @@
         </div>
         {#if editing}
           <div class="edit-form">
-            <div class="edit-field"><label>Name</label><input type="text" bind:value={editName} disabled={saving} /><span class="field-hint">No spaces. Use hyphens or underscores (e.g. analysis_bs)</span></div>
-            <div class="edit-field"><label>Description</label><input type="text" bind:value={editDescription} disabled={saving} /></div>
-            <div class="edit-field edit-field-body"><label>Content (Markdown)</label><textarea bind:value={editBody} disabled={saving}></textarea></div>
+            <div class="edit-field"><label for="plugin-edit-name">Name</label><input id="plugin-edit-name" type="text" bind:value={editName} disabled={saving} /><span class="field-hint">No spaces. Use hyphens or underscores (e.g. analysis_bs)</span></div>
+            <div class="edit-field"><label for="plugin-edit-desc">Description</label><input id="plugin-edit-desc" type="text" bind:value={editDescription} disabled={saving} /></div>
+            <div class="edit-field edit-field-body"><label for="plugin-edit-body">Content (Markdown)</label><textarea id="plugin-edit-body" bind:value={editBody} disabled={saving}></textarea></div>
             {#if editError}<div class="edit-error">{editError}</div>{/if}
             <div class="edit-actions">
               <button class="btn-cancel" on:click={handleCancelEdit}>Cancel</button>

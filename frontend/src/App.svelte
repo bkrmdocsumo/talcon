@@ -43,6 +43,13 @@
     refreshPlugins,
   } from './lib/stores/pluginsStore.js';
 
+  import {
+    clawEvents, clawConfig, clawStats, visibleClawEvents, clawCrons,
+    initClawData, destroyClawListener,
+    updateClawConfig, pushManualClawEvent, fireHeartbeat,
+    addClawCron, removeClawCron,
+  } from './lib/stores/clawStore.js';
+
   // ─── Components ───
   import Sidebar from './components/Sidebar.svelte';
   import Header from './components/Header.svelte';
@@ -57,6 +64,7 @@
   import AgentWorkspace from './components/AgentWorkspace.svelte';
   import AgentFileCard from './components/AgentFileCard.svelte';
   import PluginsPanel from './components/PluginsPanel.svelte';
+  import ClawPanel from './components/ClawPanel.svelte';
 
   // ─── Local UI refs ───
   let chatContainer;
@@ -77,6 +85,7 @@
     await refreshTelegramChats();
     await refreshSnippets();
     await refreshPlugins();
+    await initClawData();
     chatInputRef?.focus();
 
     // Listen for hotkey dictation auto-saves so we can refresh the flow sidebar.
@@ -98,6 +107,7 @@
     if (statusPollTimer) clearTimeout(statusPollTimer);
     if (flowSavedCleanup) flowSavedCleanup();
     if (telegramActivityCleanup) telegramActivityCleanup();
+    destroyClawListener();
   });
 
   // ─── Scroll behaviour ───
@@ -256,6 +266,36 @@
     activeTab.set(prevTab || 'chat');
   }
 
+  // ─── Claw event handlers ───
+
+  function handleClawConfigChange(e) {
+    updateClawConfig(e.detail);
+  }
+
+  function handleClawFireHeartbeat() {
+    fireHeartbeat();
+  }
+
+  function handleClawPushEvent(e) {
+    pushManualClawEvent(e.detail.type, e.detail.message);
+  }
+
+  async function handleClawAddCron(e) {
+    try {
+      await addClawCron(e.detail.schedule, e.detail.message);
+    } catch (err) {
+      console.error('Failed to add cron:', err);
+    }
+  }
+
+  async function handleClawRemoveCron(e) {
+    try {
+      await removeClawCron(e.detail.id);
+    } catch (err) {
+      console.error('Failed to remove cron:', err);
+    }
+  }
+
   async function handleOpenFile(e) {
     const { path } = e.detail;
     if (!path) return;
@@ -329,6 +369,8 @@
     managingSnippets={$managingSnippets}
     bgStreamingChats={$backgroundStreamingSessions}
     bgStreamingAgents={$backgroundAgentStreamingSessions}
+    clawEvents={$clawEvents}
+    clawStats={$clawStats}
     on:newChat={handleNewSession}
     on:selectChat={handleSelectChat}
     on:deleteChat={handleDeleteChat}
@@ -367,6 +409,18 @@
           on:openSettings={() => showSettings.set(true)}
         />
       {/if}
+    {:else if $activeTab === 'claw'}
+      <ClawPanel
+        events={$visibleClawEvents}
+        config={$clawConfig}
+        stats={$clawStats}
+        crons={$clawCrons}
+        on:configChange={handleClawConfigChange}
+        on:fireHeartbeat={handleClawFireHeartbeat}
+        on:pushEvent={handleClawPushEvent}
+        on:addCron={handleClawAddCron}
+        on:removeCron={handleClawRemoveCron}
+      />
     {:else if $activeTab === 'agents'}
       {#if $agentPhase === 'welcome'}
         <main class="chat-area">

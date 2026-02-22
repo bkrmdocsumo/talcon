@@ -69,7 +69,8 @@ func (a *App) SendMessage(input string) (*ChatResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal input: %w", err)
 	}
-	result, err := agent.RunAgentTurn(a.ctx, a.sessionID, content, a.agentCfg, a.deps)
+	ctx := tools.WithCronManager(a.ctx, a.cronManager())
+	result, err := agent.RunAgentTurn(ctx, a.sessionID, content, a.agentCfg, a.deps)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +84,8 @@ func (a *App) SendMessageWithFiles(input string, files []FileAttachment) (*ChatR
 		return nil, fmt.Errorf("%s", a.initError)
 	}
 	content := buildUserContent(input, files)
-	result, err := agent.RunAgentTurn(a.ctx, a.sessionID, content, a.agentCfg, a.deps)
+	ctx := tools.WithCronManager(a.ctx, a.cronManager())
+	result, err := agent.RunAgentTurn(ctx, a.sessionID, content, a.agentCfg, a.deps)
 	if err != nil {
 		return nil, err
 	}
@@ -183,6 +185,9 @@ func (a *App) runStream(sessionID string, content json.RawMessage, workspaceDir 
 		}
 		wailsRuntime.EventsEmit(a.ctx, eventName, data)
 	}
+
+	// Inject cron manager so the agent can manage crons via the manage_cron tool.
+	streamCtx = tools.WithCronManager(streamCtx, a.cronManager())
 
 	// If a custom workspace dir is provided (e.g. agent tasks use ~/.talon/agents/),
 	// pre-set it in the context so the agent honours it instead of the default.

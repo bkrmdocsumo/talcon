@@ -177,6 +177,7 @@
         <div
           class="snippet-row"
           class:editing={editingId === snippet.id}
+          role="group"
           on:mouseenter={() => hoveredId = snippet.id}
           on:mouseleave={() => hoveredId = null}
         >

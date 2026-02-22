@@ -3,6 +3,7 @@ package sandbox
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -163,7 +164,8 @@ func execWasm(ctx context.Context, cfg Config, wasmBytes []byte, args []string, 
 		WithStdout(&stdout).
 		WithStderr(&stderr).
 		WithArgs(args...).
-		WithFS(os.DirFS(workDir))
+		WithFS(os.DirFS(workDir)).
+		WithRandSource(rand.Reader)
 
 	// Instantiate and run the module (calls _start automatically).
 	_, err := rt.InstantiateWithConfig(execCtx, wasmBytes, modCfg)

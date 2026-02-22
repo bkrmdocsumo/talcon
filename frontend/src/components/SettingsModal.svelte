@@ -399,13 +399,14 @@
 
             {#if settingsHotkeyEnabled}
               <label class="field-label" for="settings-hotkey-modifier">Hotkey (hold to record)</label>
-              <!-- svelte-ignore a11y-no-static-element-interactions -->
-              <div
+            <div
                 id="settings-hotkey-modifier"
                 class="hotkey-capture-input"
                 class:hotkey-listening={hotkeyListening}
                 role="button"
+                tabindex="0"
                 on:click={hotkeyListening ? stopHotkeyCapture : startHotkeyCapture}
+                on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (hotkeyListening ? stopHotkeyCapture : startHotkeyCapture)(); }}}
               >
                 {#if hotkeyListening}
                   <span class="hotkey-listening-text">Press a modifier key...</span>

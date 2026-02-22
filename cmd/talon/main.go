@@ -135,8 +135,8 @@ func main() {
 		}
 
 	case "server":
-		// Start HTTP gateway.
-		go gateway.RunHTTP(ctx, cfg, deps)
+		// Start HTTP gateway (no Claw gateway in CLI server mode).
+		go gateway.RunHTTP(ctx, cfg, deps, nil)
 
 		// Start Telegram if configured.
 		if cfg.TelegramToken != "" {

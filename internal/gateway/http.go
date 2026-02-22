@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 
 	"github.com/user/talon/internal/agent"
+	"github.com/user/talon/internal/claw"
 	"github.com/user/talon/internal/config"
 	"github.com/user/talon/internal/router"
 )
@@ -24,8 +26,18 @@ type chatResponse struct {
 	Error    string `json:"error,omitempty"`
 }
 
+// webhookRequest is the JSON body for POST /webhook.
+type webhookRequest struct {
+	Source    string            `json:"source"`
+	Message   string            `json:"message"`
+	SessionID string            `json:"session_id"`
+	AgentName string            `json:"agent_name"`
+	Metadata  map[string]string `json:"metadata"`
+}
+
 // RunHTTP starts the HTTP API server. It blocks until ctx is cancelled.
-func RunHTTP(ctx context.Context, cfg *config.Config, deps agent.Deps) {
+// If gw is non-nil the /webhook endpoint routes events through the Claw gateway.
+func RunHTTP(ctx context.Context, cfg *config.Config, deps agent.Deps, gw *claw.Gateway) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +77,57 @@ func RunHTTP(ctx context.Context, cfg *config.Config, deps agent.Deps) {
 		}
 
 		writeJSON(w, http.StatusOK, chatResponse{Response: result.FinalText})
+	})
+
+	mux.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		if gw == nil {
+			writeJSON(w, http.StatusServiceUnavailable, chatResponse{Error: "claw gateway not enabled"})
+			return
+		}
+
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, chatResponse{Error: "failed to read body"})
+			return
+		}
+
+		var req webhookRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			writeJSON(w, http.StatusBadRequest, chatResponse{Error: "invalid JSON body"})
+			return
+		}
+
+		source := req.Source
+		if source == "" {
+			source = "webhook"
+		}
+		sessionID := req.SessionID
+		if sessionID == "" {
+			sessionID = "claw:webhook"
+		}
+		agentName := req.AgentName
+		if agentName == "" {
+			agentName = "main"
+		}
+
+		payload := req.Message
+		if payload == "" {
+			payload = fmt.Sprintf("Incoming webhook from %s:\n```json\n%s\n```\nAnalyse this payload and take appropriate action.", source, string(body))
+		}
+
+		evt := claw.NewEvent(claw.EventWebhook, payload, source, sessionID, agentName)
+		evt.Metadata = req.Metadata
+		gw.Push(evt)
+
+		writeJSON(w, http.StatusAccepted, map[string]string{
+			"status":   "accepted",
+			"event_id": evt.ID,
+		})
 	})
 
 	addr := fmt.Sprintf(":%d", cfg.Port)

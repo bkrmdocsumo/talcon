@@ -13,11 +13,15 @@ import (
 
 	"github.com/user/talon/internal/agent"
 	"github.com/user/talon/internal/browser"
+	"github.com/user/talon/internal/claw"
 	"github.com/user/talon/internal/config"
 	"github.com/user/talon/internal/llm"
+	"github.com/user/talon/internal/scheduler"
 	"github.com/user/talon/internal/session"
 	"github.com/user/talon/internal/speech"
 	"github.com/user/talon/internal/tools"
+
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App is the main Wails application struct. Its exported methods are
@@ -49,6 +53,11 @@ type App struct {
 
 	// Dictation timing (for saving hotkey recordings to flow history).
 	dictStartTime time.Time
+
+	// Claw: event-driven gateway system.
+	clawGateway   *claw.Gateway
+	clawHeartbeat *claw.Heartbeat
+	clawScheduler *scheduler.Scheduler
 }
 
 // NewApp creates a new App instance.
@@ -94,6 +103,9 @@ func (a *App) startup(ctx context.Context) {
 
 	log.Printf("Talon GUI ready (agent=%s, model=%s)", a.agentCfg.Name, a.agentCfg.Model)
 
+	// Initialise the Claw event gateway.
+	a.initClaw(cfg)
+
 	// Always show the waveform icon in the macOS menu bar while the app is open.
 	speech.ShowMenuBarIcon()
 
@@ -116,6 +128,21 @@ func (a *App) startup(ctx context.Context) {
 // shutdown is called by Wails when the application is closing.
 func (a *App) shutdown(ctx context.Context) {
 	log.Println("Talon GUI shutting down")
+
+	// Fire Claw shutdown hook and stop subsystems.
+	if a.clawGateway != nil {
+		claw.FireShutdownHook(a.clawGateway)
+	}
+	if a.clawScheduler != nil {
+		a.clawScheduler.Stop()
+	}
+	if a.clawHeartbeat != nil {
+		a.clawHeartbeat.Stop()
+	}
+	if a.clawGateway != nil {
+		a.clawGateway.Stop()
+	}
+
 	speech.TeardownDictation()
 	speech.HideMenuBarIcon()
 	a.stopTelegram()
@@ -218,6 +245,31 @@ func (a *App) initCore(cfg *config.Config, baseDir string) error {
 	a.initError = ""
 
 	return nil
+}
+
+// initClaw sets up the Claw event gateway, heartbeat ticker, and fires
+// the startup lifecycle hook.
+func (a *App) initClaw(cfg *config.Config) {
+	emit := func(eventName string, data interface{}) {
+		wailsRuntime.EventsEmit(a.ctx, eventName, data)
+	}
+
+	a.clawGateway = claw.NewGateway(a.ctx, cfg, a.deps, emit)
+	a.clawGateway.SetCronManager(a.cronManager())
+	a.clawGateway.Start()
+
+	a.clawHeartbeat = claw.NewHeartbeat(a.clawGateway, claw.DefaultHeartbeatInterval)
+	// Heartbeat is not auto-started; user enables it from the Claw dashboard.
+
+	// Start the cron scheduler and load persisted cron tasks.
+	a.clawScheduler = scheduler.New(a.ctx)
+	a.loadAndRegisterCrons()
+	a.clawScheduler.Start()
+
+	// Fire the startup lifecycle hook.
+	claw.FireStartupHook(a.clawGateway)
+
+	log.Println("[claw] gateway, scheduler, and hooks initialised")
 }
 
 // IsReady returns whether the backend has been successfully initialised.

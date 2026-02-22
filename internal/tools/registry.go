@@ -87,4 +87,7 @@ func RegisterStandardTools(r *Registry, baseDir string) {
 	r.Register(&PDFInfoTool{})
 	r.Register(&MergePDFTool{})
 	r.Register(&SplitPDFTool{})
+
+	// Cron management tool
+	r.Register(&ManageCronTool{})
 }

@@ -3,7 +3,7 @@
 
   export let chatHistory = []; // Array of { id, title, timestamp }
   export let activeChatId = null;
-  export let activeTab = 'chat'; // 'chat' | 'agents' | 'flow' | 'plugins'
+  export let activeTab = 'chat'; // 'chat' | 'agents' | 'flow' | 'claw' | 'plugins'
   export let flowHistory = []; // Array of { id, title, duration, wordCount, timestamp }
   export let activeFlowId = null;
   export let agentTaskHistory = []; // Array of { id, title, timestamp }
@@ -15,6 +15,8 @@
   export let managingSnippets = false;
   export let bgStreamingChats = new Set();     // chat session IDs streaming in background
   export let bgStreamingAgents = new Set();    // agent session IDs streaming in background
+  export let clawEvents = [];                  // Array of claw event records
+  export let clawStats = {};                   // Claw dashboard stats
 
   const dispatch = createEventDispatcher();
 
@@ -137,6 +139,22 @@
   $: filteredTelegramChats = searchQuery
     ? telegramChats.filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()))
     : telegramChats;
+
+  // ─── Claw event filtering ───
+  $: filteredClawEvents = searchQuery
+    ? clawEvents.filter(e => (e.source || '').toLowerCase().includes(searchQuery.toLowerCase()) || (e.type || '').toLowerCase().includes(searchQuery.toLowerCase()))
+    : clawEvents;
+
+  function formatClawTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const now = new Date();
+    const diff = now - d;
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
 
   // Group items by time period.
   $: groupedChats = groupByTime(filteredHistory);
@@ -435,6 +453,55 @@
                   </button>
                 </button>
               {/each}
+            </div>
+          {/each}
+        {/if}
+      </div>
+
+    <!-- ─── Claw Tab Nav ─── -->
+    {:else if activeTab === 'claw'}
+      <div class="claw-sidebar-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+        <span>Claw Gateway</span>
+        <span class="claw-status-dot" class:active={clawStats.gateway_active}></span>
+      </div>
+
+      <div class="claw-stats-mini">
+        <span>{clawStats.total_events || 0} events</span>
+        <span class="claw-stats-sep">&middot;</span>
+        <span>{clawStats.events_today || 0} today</span>
+      </div>
+
+      <div class="search-wrapper">
+        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <circle cx="11" cy="11" r="8" />
+          <path d="M21 21l-4.35-4.35" />
+        </svg>
+        <input
+          class="search-input"
+          type="text"
+          placeholder="Search events"
+          bind:value={searchQuery}
+        />
+      </div>
+
+      <div class="nav-divider"></div>
+
+      <div class="chat-history">
+        {#if filteredClawEvents.length === 0}
+          <p class="empty-history">
+            {searchQuery ? 'No matching events' : 'Events will appear here as triggers fire'}
+          </p>
+        {:else}
+          {#each filteredClawEvents as event (event.id)}
+            <div class="history-item claw-event-item" class:claw-suppressed={event.status === 'suppressed'}>
+              <span class="claw-type-dot" class:claw-type-heartbeat={event.type === 'heartbeat'} class:claw-type-cron={event.type === 'cron'} class:claw-type-hook={event.type === 'hook'} class:claw-type-webhook={event.type === 'webhook'} class:claw-type-message={event.type === 'message'}></span>
+              <div class="claw-event-info">
+                <span class="history-title">{event.source || event.type}</span>
+                <span class="claw-event-meta">{event.type} &middot; {formatClawTime(event.timestamp)}</span>
+              </div>
             </div>
           {/each}
         {/if}
@@ -799,6 +866,82 @@
   .telegram-item:hover .telegram-chat-icon {
     opacity: 1;
     color: #29b6f6;
+  }
+
+  /* ─── Claw Sidebar ─── */
+  .claw-sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .claw-sidebar-header svg {
+    color: var(--accent);
+  }
+
+  .claw-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    margin-left: auto;
+  }
+
+  .claw-status-dot.active {
+    background: #4ade80;
+    box-shadow: 0 0 4px rgba(74, 222, 128, 0.5);
+  }
+
+  .claw-stats-mini {
+    padding: 2px 12px 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .claw-stats-sep {
+    margin: 0 4px;
+  }
+
+  .claw-event-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: default;
+  }
+
+  .claw-event-item.claw-suppressed {
+    opacity: 0.4;
+  }
+
+  .claw-type-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-muted);
+  }
+
+  .claw-type-dot.claw-type-heartbeat { background: #f472b6; }
+  .claw-type-dot.claw-type-cron { background: #60a5fa; }
+  .claw-type-dot.claw-type-hook { background: #a78bfa; }
+  .claw-type-dot.claw-type-webhook { background: #fbbf24; }
+  .claw-type-dot.claw-type-message { background: var(--accent); }
+
+  .claw-event-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .claw-event-meta {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 1px;
   }
 
   /* ─── Sidebar Footer ─── */

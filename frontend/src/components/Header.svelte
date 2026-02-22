@@ -3,7 +3,7 @@
   import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
   import { GetDictationStatus, OpenLogFile } from '../../wailsjs/go/main/App';
 
-  export let activeTab = 'chat'; // 'chat' | 'agents' | 'flow'
+  export let activeTab = 'chat'; // 'chat' | 'agents' | 'flow' | 'claw'
   export let telegramStatus = 'stopped';
   export let telegramToggling = false;
 
@@ -94,6 +94,16 @@
         <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
       </svg>
       Flow
+    </button>
+    <button
+      class="tab"
+      class:active={activeTab === 'claw'}
+      on:click={() => setTab('claw')}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </svg>
+      Claw
     </button>
   </nav>
 
