@@ -175,6 +175,22 @@ func (a *App) FireHeartbeatNow() {
 	}
 }
 
+// SendClawFollowUp starts a streaming follow-up message within a claw event's
+// session. This allows the user to continue a conversation that was started by
+// a cron, heartbeat, hook, or webhook event. Results are delivered via
+// "claw:stream:event" Wails events.
+func (a *App) SendClawFollowUp(sessionID string, message string) error {
+	if !a.ready {
+		return fmt.Errorf("%s", a.initError)
+	}
+	content, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("marshal input: %w", err)
+	}
+	go a.runStream(sessionID, content, "", "claw:stream:event")
+	return nil
+}
+
 // GetClawEventChat loads the full conversation history for a claw event's
 // session, returning it in the same HistoryMessage format used by LoadSession.
 // This lets the frontend show the complete chat (user messages, assistant

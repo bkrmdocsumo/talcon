@@ -52,13 +52,16 @@ type EventRecord struct {
 }
 
 // NewEvent creates an AgentEvent with a fresh UUID and timestamp.
-func NewEvent(typ EventType, payload, source, sessionID, agentName string) AgentEvent {
+// The session ID is made unique per event by appending the event UUID,
+// so each event gets its own isolated conversation history.
+func NewEvent(typ EventType, payload, source, sessionPrefix, agentName string) AgentEvent {
+	id := uuid.New().String()
 	return AgentEvent{
-		ID:        uuid.New().String(),
+		ID:        id,
 		Type:      typ,
 		Payload:   payload,
 		Source:    source,
-		SessionID: sessionID,
+		SessionID: sessionPrefix + ":" + id,
 		AgentName: agentName,
 		Timestamp: time.Now(),
 	}

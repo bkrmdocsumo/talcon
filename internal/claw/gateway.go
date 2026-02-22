@@ -55,11 +55,29 @@ func NewGateway(ctx context.Context, cfg *config.Config, deps agent.Deps, emit E
 
 // Push enqueues an event. Non-blocking: drops the event if the queue is full.
 func (g *Gateway) Push(evt AgentEvent) {
+	// Emit/store the event as pending immediately so queued items are visible
+	// in the UI even before processing starts.
+	pending := EventRecord{
+		Event:       evt,
+		Status:      StatusPending,
+		ProcessedAt: time.Now(),
+	}
+	g.upsertRecord(pending)
+	g.emitClawEvent(evt, StatusPending, "")
+
 	select {
 	case g.queue <- evt:
 		log.Printf("[claw] queued event %s type=%s source=%s", evt.ID, evt.Type, evt.Source)
 	default:
 		log.Printf("[claw] WARNING: queue full, dropping event %s", evt.ID)
+		failed := EventRecord{
+			Event:       evt,
+			Status:      StatusFailed,
+			Result:      "error: queue full, event dropped",
+			ProcessedAt: time.Now(),
+		}
+		g.upsertRecord(failed)
+		g.emitClawEvent(evt, StatusFailed, failed.Result)
 	}
 }
 
@@ -186,13 +204,19 @@ func (g *Gateway) processEvent(evt AgentEvent) {
 		}
 	}
 
-	g.appendRecord(rec)
+	g.upsertRecord(rec)
 	g.emitClawEvent(evt, rec.Status, rec.Result)
 }
 
-func (g *Gateway) appendRecord(rec EventRecord) {
+func (g *Gateway) upsertRecord(rec EventRecord) {
 	g.histMu.Lock()
 	defer g.histMu.Unlock()
+	for i := range g.history {
+		if g.history[i].Event.ID == rec.Event.ID {
+			g.history[i] = rec
+			return
+		}
+	}
 	g.history = append(g.history, rec)
 	if len(g.history) > maxHistoryRecords {
 		g.history = g.history[len(g.history)-maxHistoryRecords:]

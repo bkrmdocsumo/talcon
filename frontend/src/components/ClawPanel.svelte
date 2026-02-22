@@ -1,7 +1,5 @@
 <script>
   import { createEventDispatcher, tick } from 'svelte';
-  import { loadClawEventChat } from '../lib/stores/clawStore.js';
-  import { renderMarkdown } from '../lib/markdown.js';
 
   export let events = [];
   export let config = {};
@@ -14,34 +12,9 @@
 
   let eventRefs = {};
 
-  // ─── Expand/collapse state ───
-  let expandedEvents = {};
-  let eventChats = {};
-  let loadingChats = {};
-
-  async function toggleExpand(event) {
-    const id = event.id;
-    if (expandedEvents[id]) {
-      expandedEvents[id] = false;
-      expandedEvents = expandedEvents;
-      return;
-    }
-    if (!eventChats[id] && event.session_id) {
-      loadingChats[id] = true;
-      loadingChats = loadingChats;
-      const messages = await loadClawEventChat(event.session_id);
-      eventChats[id] = messages;
-      eventChats = eventChats;
-      loadingChats[id] = false;
-      loadingChats = loadingChats;
-    }
-    expandedEvents[id] = true;
-    expandedEvents = expandedEvents;
-  }
-
-  function formatToolLabel(name) {
-    if (!name) return '';
-    return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  function openEvent(event) {
+    if (!event.session_id || event.status === 'suppressed' || event.status === 'processing') return;
+    dispatch('openEvent', event);
   }
 
   $: if (focusedEventId && activeSubTab === 'events') {
@@ -388,8 +361,9 @@
                 class="event-item"
                 class:event-suppressed={event.status === 'suppressed'}
                 class:event-focused={focusedEventId === event.id}
-                class:event-expanded={expandedEvents[event.id]}
+                class:event-openable={event.session_id && event.status !== 'suppressed' && event.status !== 'processing'}
                 bind:this={eventRefs[event.id]}
+                on:click={() => openEvent(event)}
               >
                 <div class="event-header">
                   <div class="event-type-badge" style="--badge-color: {statusColors[event.status] || 'var(--text-muted)'}">
@@ -402,96 +376,26 @@
                   <span class="event-time">{formatTime(event.timestamp)}</span>
                   <span class="event-status-dot" style="background: {statusColors[event.status] || 'var(--text-muted)'}"></span>
                   {#if event.session_id && event.status !== 'suppressed' && event.status !== 'processing'}
-                    <button class="event-expand-btn" on:click={() => toggleExpand(event)} title={expandedEvents[event.id] ? 'Collapse' : 'Expand full chat'}>
-                      {#if loadingChats[event.id]}
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="spin">
-                          <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-                        </svg>
-                      {:else}
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class:expanded-icon={expandedEvents[event.id]}>
-                          <polyline points="6 9 12 15 18 9"/>
-                        </svg>
-                      {/if}
+                    <button class="event-open-btn" on:click|stopPropagation={() => openEvent(event)} title="Open conversation">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                      </svg>
                     </button>
                   {/if}
                 </div>
 
-                {#if !expandedEvents[event.id]}
-                  {#if event.payload && event.status !== 'suppressed'}
-                    <div class="event-payload">{event.payload.length > 120 ? event.payload.slice(0, 120) + '...' : event.payload}</div>
-                  {/if}
+                {#if event.payload && event.status !== 'suppressed'}
+                  <div class="event-payload">{event.payload.length > 120 ? event.payload.slice(0, 120) + '...' : event.payload}</div>
+                {/if}
 
-                  {#if event.result && event.status === 'completed'}
-                    <div class="event-result">{event.result}</div>
-                  {:else if event.status === 'suppressed'}
-                    <div class="event-result event-ok">Heartbeat OK — no action needed</div>
-                  {:else if event.status === 'failed'}
-                    <div class="event-result event-error">{event.result}</div>
-                  {:else if event.status === 'processing'}
-                    <div class="event-result event-processing">Processing...</div>
-                  {/if}
-                {:else}
-                  <!-- Expanded: full conversation -->
-                  <div class="event-chat">
-                    {#if eventChats[event.id] && eventChats[event.id].length > 0}
-                      {#each eventChats[event.id] as msg, i}
-                        <div class="chat-msg chat-msg-{msg.role}">
-                          <div class="chat-msg-role">{msg.role === 'user' ? 'Input' : 'Response'}</div>
-
-                          {#if msg.files && msg.files.length > 0}
-                            <div class="chat-msg-files">
-                              {#each msg.files as file}
-                                <span class="chat-file-chip">
-                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                                  </svg>
-                                  {file.name}
-                                </span>
-                              {/each}
-                            </div>
-                          {/if}
-
-                          {#if msg.steps && msg.steps.length > 0}
-                            {#each msg.steps as step, si}
-                              {#if step.type === 'thinking'}
-                                <details class="chat-step-details">
-                                  <summary class="chat-step-summary chat-step-thinking">Thinking</summary>
-                                  <div class="chat-step-content">{step.content}</div>
-                                </details>
-                              {:else if step.type === 'tool_call'}
-                                <details class="chat-step-details">
-                                  <summary class="chat-step-summary chat-step-tool">
-                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-                                    </svg>
-                                    {formatToolLabel(step.tool_name)}
-                                  </summary>
-                                  {#if step.tool_input}
-                                    <pre class="chat-step-code">{step.tool_input}</pre>
-                                  {/if}
-                                </details>
-                              {:else if step.type === 'tool_result'}
-                                <details class="chat-step-details">
-                                  <summary class="chat-step-summary chat-step-result">
-                                    Result: {formatToolLabel(step.tool_name)}
-                                  </summary>
-                                  <pre class="chat-step-code">{step.content}</pre>
-                                </details>
-                              {/if}
-                            {/each}
-                          {/if}
-
-                          {#if msg.content}
-                            <div class="chat-msg-content">{@html renderMarkdown(msg.content)}</div>
-                          {/if}
-                        </div>
-                      {/each}
-                    {:else if event.status === 'failed'}
-                      <div class="event-result event-error">{event.result}</div>
-                    {:else}
-                      <div class="chat-msg-empty">No conversation data available.</div>
-                    {/if}
-                  </div>
+                {#if event.result && event.status === 'completed'}
+                  <div class="event-result">{event.result}</div>
+                {:else if event.status === 'suppressed'}
+                  <div class="event-result event-ok">Heartbeat OK — no action needed</div>
+                {:else if event.status === 'failed'}
+                  <div class="event-result event-error">{event.result}</div>
+                {:else if event.status === 'processing'}
+                  <div class="event-result event-processing">Processing...</div>
                 {/if}
               </div>
             {/each}
@@ -964,6 +868,10 @@
     border-color: var(--border-light);
   }
 
+  .event-item.event-openable {
+    cursor: pointer;
+  }
+
   .event-item.event-suppressed {
     opacity: 0.5;
   }
@@ -1055,192 +963,26 @@
     50% { opacity: 0.5; }
   }
 
-  /* ─── Expand button ─── */
-  .event-expand-btn {
+  /* ─── Open chat button ─── */
+  .event-open-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 26px;
+    height: 26px;
     padding: 0;
     background: transparent;
     border: 1px solid transparent;
-    border-radius: 5px;
+    border-radius: 6px;
     color: var(--text-muted);
     cursor: pointer;
     flex-shrink: 0;
     transition: all 0.15s ease;
   }
 
-  .event-expand-btn:hover {
-    background: var(--bg-tertiary);
-    border-color: var(--border);
-    color: var(--text-secondary);
-  }
-
-  .expanded-icon {
-    transform: rotate(180deg);
-  }
-
-  .event-expanded {
-    border-color: var(--border-light);
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-  .spin {
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* ─── Expanded chat view ─── */
-  .event-chat {
-    margin-top: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    border-top: 1px solid var(--border);
-    padding-top: 10px;
-  }
-
-  .chat-msg {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .chat-msg-role {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-    color: var(--text-muted);
-  }
-
-  .chat-msg-user .chat-msg-role {
+  .event-open-btn:hover {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 25%, transparent);
     color: var(--accent);
-  }
-
-  .chat-msg-content {
-    font-size: 12px;
-    color: var(--text-primary);
-    line-height: 1.6;
-    word-break: break-word;
-  }
-
-  .chat-msg-content :global(p) {
-    margin: 4px 0;
-  }
-
-  .chat-msg-content :global(pre) {
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-size: 11px;
-    overflow-x: auto;
-    margin: 6px 0;
-  }
-
-  .chat-msg-content :global(code) {
-    font-size: 11px;
-    font-family: var(--font-mono, monospace);
-  }
-
-  .chat-msg-content :global(ul),
-  .chat-msg-content :global(ol) {
-    padding-left: 18px;
-    margin: 4px 0;
-  }
-
-  .chat-msg-files {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .chat-file-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
-    border-radius: 5px;
-    font-size: 10px;
-    color: var(--accent);
-    font-weight: 500;
-  }
-
-  /* ─── Step details (thinking, tool calls) ─── */
-  .chat-step-details {
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
-    margin: 2px 0;
-  }
-
-  .chat-step-summary {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 8px;
-    font-size: 11px;
-    font-weight: 500;
-    cursor: pointer;
-    user-select: none;
-    color: var(--text-muted);
-    background: var(--bg-primary);
-    transition: background 0.15s ease;
-  }
-
-  .chat-step-summary:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-secondary);
-  }
-
-  .chat-step-thinking {
-    color: #a78bfa;
-  }
-
-  .chat-step-tool {
-    color: var(--accent);
-  }
-
-  .chat-step-result {
-    color: #4ade80;
-  }
-
-  .chat-step-content {
-    padding: 6px 8px;
-    font-size: 11px;
-    color: var(--text-secondary);
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-height: 200px;
-    overflow-y: auto;
-    background: var(--bg-primary);
-  }
-
-  .chat-step-code {
-    padding: 6px 8px;
-    font-size: 10px;
-    font-family: var(--font-mono, monospace);
-    color: var(--text-secondary);
-    line-height: 1.4;
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-height: 200px;
-    overflow-y: auto;
-    margin: 0;
-    background: var(--bg-primary);
-  }
-
-  .chat-msg-empty {
-    font-size: 12px;
-    color: var(--text-muted);
-    text-align: center;
-    padding: 12px 0;
   }
 </style>

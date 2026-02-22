@@ -49,6 +49,9 @@
     initClawData, destroyClawListener,
     updateClawConfig, pushManualClawEvent, fireHeartbeat,
     addClawCron, removeClawCron,
+    viewingClawEvent, activeClawEvent, clawEventMessages,
+    clawEventFiles, clawEventLoading,
+    selectClawEvent, closeClawEventView, sendClawFollowUp, cancelClawStream,
   } from './lib/stores/clawStore.js';
 
   // ─── Components ───
@@ -70,6 +73,7 @@
   // ─── Local UI refs ───
   let chatContainer;
   let chatInputRef;
+  let clawInputRef;
   let agentWelcomeRef;
   let userScrolledUp = false;
   let prevTab = 'chat'; // tab to return to when closing plugins
@@ -119,7 +123,7 @@
   }
 
   afterUpdate(() => {
-    if ($loading && !userScrolledUp) {
+    if (($loading || $clawEventLoading) && !userScrolledUp) {
       scrollToBottom();
     }
   });
@@ -305,6 +309,26 @@
     }
   }
 
+  async function handleOpenClawEvent(e) {
+    await selectClawEvent(e.detail);
+  }
+
+  function handleCloseClawEvent() {
+    closeClawEventView();
+  }
+
+  async function handleClawFollowUp(e) {
+    const { text } = e.detail;
+    userScrolledUp = false;
+    clawInputRef?.clear();
+    await sendClawFollowUp(text);
+    tick().then(() => clawInputRef?.focus());
+  }
+
+  function handleClawCancel() {
+    cancelClawStream();
+  }
+
   async function handleOpenFile(e) {
     const { path } = e.detail;
     if (!path) return;
@@ -425,21 +449,67 @@
         />
       {/if}
     {:else if $activeTab === 'claw'}
-      <ClawPanel
-        events={$visibleClawEvents}
-        config={$clawConfig}
-        stats={$clawStats}
-        crons={$clawCrons}
-        activeSubTab={$clawActiveSubTab}
-        focusedEventId={$clawFocusedEventId}
-        on:subTabChange={(e) => clawActiveSubTab.set(e.detail.tab)}
-        on:clearFocusedEvent={() => clawFocusedEventId.set(null)}
-        on:configChange={handleClawConfigChange}
-        on:fireHeartbeat={handleClawFireHeartbeat}
-        on:pushEvent={handleClawPushEvent}
-        on:addCron={handleClawAddCron}
-        on:removeCron={handleClawRemoveCron}
-      />
+      {#if $viewingClawEvent && $activeClawEvent}
+        <div class="claw-event-header-bar">
+          <button class="claw-event-back-btn" on:click={handleCloseClawEvent}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Back to events
+          </button>
+          <div class="claw-event-header-meta">
+            <span class="claw-event-header-type">{$activeClawEvent.type}</span>
+            <span class="claw-event-header-source">{$activeClawEvent.source}</span>
+          </div>
+        </div>
+
+        <main class="chat-area" bind:this={chatContainer} on:scroll={handleChatScroll}>
+          <div class="chat-container">
+            {#if $clawEventMessages.length === 0}
+              <p class="claw-event-empty">No conversation data for this event.</p>
+            {:else}
+              {#each $clawEventMessages as message, i (i)}
+                <ChatMessage {message} agentName={$agentName} />
+              {/each}
+            {/if}
+
+            {#if $clawEventFiles.length > 0 && !$clawEventLoading}
+              <div class="chat-file-cards">
+                {#each $clawEventFiles as file}
+                  <AgentFileCard {file} on:openFile={handleOpenFile} on:openFolder={handleRevealFolder} />
+                {/each}
+              </div>
+            {/if}
+          </div>
+        </main>
+
+        <ChatInput
+          bind:this={clawInputRef}
+          disabled={$clawEventLoading || !$ready}
+          loading={$clawEventLoading}
+          configuredProviders={$configuredProviders}
+          on:send={handleClawFollowUp}
+          on:cancel={handleClawCancel}
+          on:modelChange={handleModelChange}
+        />
+      {:else}
+        <ClawPanel
+          events={$visibleClawEvents}
+          config={$clawConfig}
+          stats={$clawStats}
+          crons={$clawCrons}
+          activeSubTab={$clawActiveSubTab}
+          focusedEventId={$clawFocusedEventId}
+          on:subTabChange={(e) => clawActiveSubTab.set(e.detail.tab)}
+          on:clearFocusedEvent={() => clawFocusedEventId.set(null)}
+          on:configChange={handleClawConfigChange}
+          on:fireHeartbeat={handleClawFireHeartbeat}
+          on:pushEvent={handleClawPushEvent}
+          on:addCron={handleClawAddCron}
+          on:removeCron={handleClawRemoveCron}
+          on:openEvent={handleOpenClawEvent}
+        />
+      {/if}
     {:else if $activeTab === 'agents'}
       {#if $agentPhase === 'welcome'}
         <main class="chat-area">
@@ -648,6 +718,58 @@
   }
 
   .telegram-empty {
+    padding: 24px 0;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  /* ─── Claw Event View ─── */
+  .claw-event-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-primary);
+    flex-shrink: 0;
+  }
+
+  .claw-event-back-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--font-sans);
+    padding: 6px 10px;
+    border-radius: 8px;
+    transition: all 0.15s ease;
+  }
+
+  .claw-event-back-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .claw-event-header-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .claw-event-header-type {
+    text-transform: capitalize;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .claw-event-empty {
     padding: 24px 0;
     text-align: center;
     color: var(--text-muted);
