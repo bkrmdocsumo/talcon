@@ -2,6 +2,7 @@
 
 #import <Cocoa/Cocoa.h>
 #import <ApplicationServices/ApplicationServices.h>
+#import <AudioToolbox/AudioServices.h>
 
 // Go-exported callbacks (defined in dictation_darwin.go).
 extern void goDictationPressed(void);
@@ -562,43 +563,62 @@ int CheckAccessibilityPermission(int promptUser) {
 // 3 = error           (Basso)
 // ═══════════════════════════════════════════════════════════════════════
 
-static BOOL audioSystemWarmedUp = NO;
+// Cache SystemSoundIDs so we only create them once.
+static SystemSoundID cachedSounds[4] = {0, 0, 0, 0};
+static BOOL soundsCached = NO;
+
+// Map sound type to system sound file path.
+static NSString *SoundFilePath(int soundType) {
+    switch (soundType) {
+        case 0: return @"/System/Library/Sounds/Pop.aiff";
+        case 1: return @"/System/Library/Sounds/Tink.aiff";
+        case 2: return @"/System/Library/Sounds/Glass.aiff";
+        case 3: return @"/System/Library/Sounds/Basso.aiff";
+        default: return nil;
+    }
+}
 
 void WarmUpAudioSystem(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (audioSystemWarmedUp) return;
-        @try {
-            // Trigger CoreAudio HAL initialization by loading (but not playing)
-            // a system sound. This ensures the audio subsystem is ready before
-            // the first hotkey press, avoiding a cold-start crash if Info.plist
-            // keys are missing or the audio daemon is slow to respond.
-            NSSound *warmup = [NSSound soundNamed:@"Pop"];
-            (void)warmup;
-            audioSystemWarmedUp = YES;
-            NSLog(@"[dictation] audio system warmed up");
-        } @catch (NSException *e) {
-            NSLog(@"[dictation] audio warm-up failed: %@", e);
+        if (soundsCached) return;
+        for (int i = 0; i < 4; i++) {
+            NSString *path = SoundFilePath(i);
+            if (!path) continue;
+            NSURL *url = [NSURL fileURLWithPath:path];
+            if (!url || ![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+                NSLog(@"[dictation] sound file not found: %@", path);
+                continue;
+            }
+            OSStatus status = AudioServicesCreateSystemSoundID((__bridge CFURLRef)url, &cachedSounds[i]);
+            if (status != kAudioServicesNoError) {
+                NSLog(@"[dictation] failed to load sound %d (status %d)", i, (int)status);
+                cachedSounds[i] = 0;
+            }
         }
+        soundsCached = YES;
+        NSLog(@"[dictation] audio system warmed up (AudioServices)");
     });
 }
 
 void PlayDictationSound(int soundType) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        NSString *soundName;
-        switch (soundType) {
-            case 0: soundName = @"Pop";   break;
-            case 1: soundName = @"Tink";  break;
-            case 2: soundName = @"Glass"; break;
-            case 3: soundName = @"Basso"; break;
-            default: return;
-        }
-        @try {
-            NSSound *sound = [NSSound soundNamed:soundName];
-            if (sound) {
-                [sound play];
+        if (soundType < 0 || soundType > 3) return;
+
+        // Lazy init if WarmUpAudioSystem hasn't been called yet.
+        if (!soundsCached) {
+            for (int i = 0; i < 4; i++) {
+                NSString *path = SoundFilePath(i);
+                if (!path) continue;
+                NSURL *url = [NSURL fileURLWithPath:path];
+                if (url && [[NSFileManager defaultManager] fileExistsAtPath:path]) {
+                    AudioServicesCreateSystemSoundID((__bridge CFURLRef)url, &cachedSounds[i]);
+                }
             }
-        } @catch (NSException *e) {
-            NSLog(@"[dictation] PlayDictationSound failed: %@", e);
+            soundsCached = YES;
+        }
+
+        if (cachedSounds[soundType] != 0) {
+            AudioServicesPlaySystemSound(cachedSounds[soundType]);
         }
     });
 }

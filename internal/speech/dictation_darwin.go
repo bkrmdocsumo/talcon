@@ -4,7 +4,7 @@ package speech
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
-#cgo LDFLAGS: -framework Cocoa -framework ApplicationServices
+#cgo LDFLAGS: -framework Cocoa -framework ApplicationServices -framework AudioToolbox
 
 #include <stdlib.h>
 
