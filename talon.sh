@@ -8,7 +8,7 @@ APP_BUNDLE="build/bin/talon.app"
 DMG_NAME="Talon-Installer"
 DMG_DIR="build/dmg"
 DMG_OUTPUT="build/${DMG_NAME}.dmg"
-VERSION="1.0.0"
+VERSION="0.7.0"
 
 usage() {
     echo "Usage: ./talon.sh <command>"
