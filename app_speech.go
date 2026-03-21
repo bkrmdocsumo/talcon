@@ -210,11 +210,10 @@ func (a *App) fixGrammar(text string) (string, error) {
 
 	log.Printf("[grammar] fixing grammar for %d chars via gpt-4o-mini...", len(text))
 
-	client := llm.NewOpenAIClient(apiKey, "gpt-4o-mini")
+	client := llm.NewOpenAIClient(apiKey, "gpt-5.4-mini")
 
-	systemPrompt := "Fix the grammar, spelling, and punctuation of the following text. " +
-		"Return ONLY the corrected text without any explanations, quotation marks, or extra formatting. " +
-		"Preserve the original meaning and tone. Do not add or remove content."
+	systemPrompt := "Fix the grammar, spelling, and punctuation of the following text. Make it better and more natural. " +
+		"Return ONLY the corrected text without any explanations, quotation marks, or extra formatting. " 
 
 	contentJSON, _ := json.Marshal(text)
 	msg := session.Message{

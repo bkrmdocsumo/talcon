@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/user/talon/internal/access"
 	"github.com/user/talon/internal/agent"
 	"github.com/user/talon/internal/claw"
 	"github.com/user/talon/internal/config"
@@ -18,6 +19,7 @@ import (
 type chatRequest struct {
 	SessionID string `json:"session_id"`
 	Message   string `json:"message"`
+	SenderID  string `json:"sender_id,omitempty"` // optional sender identity for access control
 }
 
 // chatResponse is the JSON response from POST /chat.
@@ -37,7 +39,8 @@ type webhookRequest struct {
 
 // RunHTTP starts the HTTP API server. It blocks until ctx is cancelled.
 // If gw is non-nil the /webhook endpoint routes events through the Claw gateway.
-func RunHTTP(ctx context.Context, cfg *config.Config, deps agent.Deps, gw *claw.Gateway) {
+// accessMgr may be nil, in which case all requests are allowed.
+func RunHTTP(ctx context.Context, cfg *config.Config, deps agent.Deps, gw *claw.Gateway, accessMgr *access.Manager) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -63,6 +66,21 @@ func RunHTTP(ctx context.Context, cfg *config.Config, deps agent.Deps, gw *claw.
 		if req.Message == "" {
 			writeJSON(w, http.StatusBadRequest, chatResponse{Error: "message is required"})
 			return
+		}
+
+		// Access control check.
+		if accessMgr != nil && req.SenderID != "" {
+			sender := access.SenderInfo{
+				ID:          "http:" + req.SenderID,
+				DisplayName: req.SenderID,
+				Channel:     "http",
+				MessageText: req.Message,
+			}
+			decision := accessMgr.Check(sender)
+			if !decision.Allowed {
+				writeJSON(w, http.StatusForbidden, chatResponse{Error: "access denied: " + decision.Reason})
+				return
+			}
 		}
 
 		// Route to the correct agent.

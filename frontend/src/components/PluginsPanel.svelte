@@ -1,5 +1,6 @@
 <script>
   import { onMount, createEventDispatcher } from 'svelte';
+  import { GetIntegrations, SaveIntegrations } from '../../wailsjs/go/main/App';
   import {
     commands, skills,
     activeSection, activeItemId, activeItemDetail, detailLoading,
@@ -52,7 +53,22 @@
   let memSearchQuery = '';
   let hoveredMemName = null;
 
-  onMount(() => { refreshPlugins(); });
+  // Integrations state
+  let intLoading = false;
+  let intSaving = false;
+  let intError = '';
+  let intSuccess = '';
+  let notionToken = '';
+
+  onMount(() => {
+    refreshPlugins();
+    // If the active section is already 'integrations' (e.g. component was
+    // remounted after navigating away), reload the integration data so
+    // local vars aren't stale empty strings.
+    if ($activeSection === 'integrations') {
+      loadIntegrations();
+    }
+  });
 
   $: isPluginSection = $activeSection === 'commands' || $activeSection === 'skills';
   $: items = $activeSection === 'commands' ? $commands : $skills;
@@ -237,6 +253,45 @@
     if (bytes < 1024) return bytes + ' B';
     return (bytes / 1024).toFixed(1) + ' KB';
   }
+
+  // Integrations handlers
+  async function loadIntegrations() {
+    intLoading = true;
+    intError = '';
+    intSuccess = '';
+    try {
+      const data = await GetIntegrations();
+      notionToken = data.notion_token || '';
+    } catch (e) {
+      intError = `Failed to load: ${e}`;
+    } finally {
+      intLoading = false;
+    }
+  }
+
+  async function handleSwitchToIntegrations() {
+    switchSection('integrations');
+    adding = false;
+    editing = false;
+    await loadIntegrations();
+  }
+
+  async function handleSaveIntegrations() {
+    intError = '';
+    intSuccess = '';
+    intSaving = true;
+    try {
+      await SaveIntegrations({
+        notion_token: notionToken.trim(),
+      });
+      intSuccess = 'Saved!';
+      setTimeout(() => { intSuccess = ''; }, 2500);
+    } catch (e) {
+      intError = `Failed to save: ${e}`;
+    } finally {
+      intSaving = false;
+    }
+  }
 </script>
 
 <div class="plugins-panel">
@@ -274,6 +329,13 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
       Memory
       {#if $memoryFiles.length > 0}<span class="section-count">{$memoryFiles.length}</span>{/if}
+    </button>
+
+    <div class="section-nav-label">Integrations</div>
+    <button class="section-btn" class:active={$activeSection === 'integrations'} on:click={handleSwitchToIntegrations}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 4v16"/><path d="M12 4v8"/></svg>
+      Notion
+      {#if notionToken.trim()}<span class="int-dot connected" title="Configured"></span>{/if}
     </button>
   </div>
 
@@ -396,6 +458,47 @@
       {/if}
     </div>
 
+  <!-- Integrations: Notion -->
+  {:else if $activeSection === 'integrations'}
+    <div class="detail-panel">
+      {#if intLoading}
+        <div class="detail-loading"><div class="spinner"></div></div>
+      {:else}
+        <div class="detail-header">
+          <div class="detail-header-top">
+            <h2 class="detail-title">Notion</h2>
+            {#if notionToken.trim()}
+              <span class="int-badge connected">Connected</span>
+            {:else}
+              <span class="int-badge">Not configured</span>
+            {/if}
+          </div>
+          <p class="detail-description-hint">Let the agent create and update Notion pages — e.g. daily summaries, meeting notes, task logs.</p>
+        </div>
+
+        <div class="detail-body">
+          {#if intError}
+            <div class="int-alert int-alert-error">{intError}</div>
+          {/if}
+          {#if intSuccess}
+            <div class="int-alert int-alert-success">{intSuccess}</div>
+          {/if}
+
+          <div class="edit-field">
+            <label for="int-notion-token">Integration Token</label>
+            <input id="int-notion-token" type="password" bind:value={notionToken} placeholder="ntn_..." />
+            <span class="field-hint">Create an internal integration at notion.so/my-integrations and paste the token here.</span>
+          </div>
+
+          <div class="edit-actions" style="margin-top: 16px;">
+            <button class="btn-save" on:click={handleSaveIntegrations} disabled={intSaving}>
+              {intSaving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </div>
+      {/if}
+    </div>
+
   <!-- Commands / Skills: original layout -->
   {:else}
     <!-- Middle: Item list -->
@@ -485,6 +588,7 @@
       {/if}
     </div>
   {/if}
+
   </div><!-- end plugins-content -->
 </div>
 
@@ -569,4 +673,13 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .save-toast { position: absolute; bottom: 24px; right: 24px; padding: 8px 20px; background: var(--accent); color: #000; font-size: 13px; font-weight: 600; border-radius: 8px; animation: fadeInOut 2s ease forwards; pointer-events: none; }
   @keyframes fadeInOut { 0% { opacity: 0; transform: translateY(8px); } 15% { opacity: 1; transform: translateY(0); } 80% { opacity: 1; } 100% { opacity: 0; } }
+
+  /* ─── Integrations ─── */
+  .int-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); margin-left: auto; flex-shrink: 0; }
+  .int-dot.connected { background: #4ade80; }
+  .int-badge { font-size: 11px; font-weight: 500; padding: 2px 10px; border-radius: 12px; background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border); }
+  .int-badge.connected { background: rgba(34, 197, 94, 0.1); color: #4ade80; border-color: rgba(34, 197, 94, 0.25); }
+  .int-alert { font-size: 12px; padding: 8px 12px; border-radius: 8px; margin-bottom: 16px; }
+  .int-alert-error { background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.2); }
+  .int-alert-success { background: rgba(34, 197, 94, 0.1); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.2); }
 </style>

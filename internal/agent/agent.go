@@ -18,7 +18,7 @@ import (
 )
 
 // maxToolIterations prevents infinite loops in the agent turn.
-const maxToolIterations = 25
+const maxToolIterations = 50
 
 // agentCodeFileSuffix is appended to the system prompt for agent tasks to
 // ensure generated code is always saved as files in the workspace directory.
@@ -199,6 +199,7 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 
 		// Process each tool call.
 		toolBlocks := resp.ToolUseBlocks()
+		var allToolResults []map[string]interface{}
 		for _, tb := range toolBlocks {
 			// Record the tool call step.
 			result.Steps = append(result.Steps, Step{
@@ -254,27 +255,26 @@ func RunAgentTurn(ctx context.Context, sessionID string, userContent json.RawMes
 				}
 			}
 
-			// Build tool_result content block as per Anthropic spec.
-			toolResultContent := []map[string]interface{}{
-				{
-					"type":        "tool_result",
-					"tool_use_id": tb.ID,
-					"content":     toolResult,
-				},
-			}
-			resultRaw, err := json.Marshal(toolResultContent)
-			if err != nil {
-				return nil, fmt.Errorf("marshal tool result: %w", err)
-			}
+			// Collect tool_result content block.
+			allToolResults = append(allToolResults, map[string]interface{}{
+				"type":        "tool_result",
+				"tool_use_id": tb.ID,
+				"content":     toolResult,
+			})
+		}
 
-			toolResultMsg := session.Message{
-				Role:    "user",
-				Content: resultRaw,
-			}
-			history = append(history, toolResultMsg)
-			if err := deps.SessionMgr.Append(sessionID, toolResultMsg); err != nil {
-				return nil, fmt.Errorf("append tool result: %w", err)
-			}
+		// Batch all tool results into a single user message as required by the Anthropic API.
+		resultRaw, err := json.Marshal(allToolResults)
+		if err != nil {
+			return nil, fmt.Errorf("marshal tool result: %w", err)
+		}
+		toolResultMsg := session.Message{
+			Role:    "user",
+			Content: resultRaw,
+		}
+		history = append(history, toolResultMsg)
+		if err := deps.SessionMgr.Append(sessionID, toolResultMsg); err != nil {
+			return nil, fmt.Errorf("append tool result: %w", err)
 		}
 
 		// Continue the loop — send tool results back to the LLM.
@@ -430,6 +430,7 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 
 		// Process each tool call.
 		toolBlocks := resp.ToolUseBlocks()
+		var allToolResults []map[string]interface{}
 		for _, tb := range toolBlocks {
 			// Record and emit the tool call step.
 			result.Steps = append(result.Steps, Step{
@@ -546,24 +547,23 @@ func RunAgentTurnStream(ctx context.Context, sessionID string, userContent json.
 				}
 			}
 
-			// Build tool_result content block as per Anthropic spec.
-			toolResultContent := []map[string]interface{}{
-				{
-					"type":        "tool_result",
-					"tool_use_id": tb.ID,
-					"content":     toolResult,
-				},
-			}
-			resultRaw, _ := json.Marshal(toolResultContent)
+			// Collect tool_result content block.
+			allToolResults = append(allToolResults, map[string]interface{}{
+				"type":        "tool_result",
+				"tool_use_id": tb.ID,
+				"content":     toolResult,
+			})
+		}
 
-			toolResultMsg := session.Message{
-				Role:    "user",
-				Content: resultRaw,
-			}
-			history = append(history, toolResultMsg)
-			if err := deps.SessionMgr.Append(sessionID, toolResultMsg); err != nil {
-				return nil, fmt.Errorf("append tool result: %w", err)
-			}
+		// Batch all tool results into a single user message as required by the Anthropic API.
+		resultRaw, _ := json.Marshal(allToolResults)
+		toolResultMsg := session.Message{
+			Role:    "user",
+			Content: resultRaw,
+		}
+		history = append(history, toolResultMsg)
+		if err := deps.SessionMgr.Append(sessionID, toolResultMsg); err != nil {
+			return nil, fmt.Errorf("append tool result: %w", err)
 		}
 
 		// Continue the loop — send tool results back to the LLM.

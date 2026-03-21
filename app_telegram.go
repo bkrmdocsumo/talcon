@@ -40,7 +40,7 @@ func (a *App) startTelegram(cfg *config.Config) {
 
 	go func() {
 		log.Println("[telegram] starting bot from GUI...")
-		gateway.RunTelegram(tgCtx, cfg, a.deps, notify)
+		gateway.RunTelegram(tgCtx, cfg, a.deps, notify, a.accessMgr)
 		// If RunTelegram returns, the bot has stopped.
 		a.tgMu.Lock()
 		if a.tgStatus == "running" {

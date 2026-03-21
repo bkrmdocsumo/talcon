@@ -1,5 +1,18 @@
 <script>
-  import { createEventDispatcher, tick } from 'svelte';
+  import { createEventDispatcher, tick, onMount } from 'svelte';
+  import {
+    accessPolicy,
+    accessSenders,
+    channelAgents,
+    updateAccessPolicy,
+    generateNewPairingCode,
+    approveSender,
+    blockSender,
+    removeSender,
+    setChannelAgentMapping,
+    removeChannelAgentMapping,
+    refreshAccessSenders,
+  } from '../lib/stores/accessStore.js';
 
   export let events = [];
   export let config = {};
@@ -9,6 +22,10 @@
   export let focusedEventId = null;
 
   const dispatch = createEventDispatcher();
+
+  // ─── Access control local state ───
+  let newChannelId = '';
+  let newAgentName = '';
 
   let eventRefs = {};
 
@@ -199,6 +216,16 @@
         <span class="sub-tab-badge">{events.length}</span>
       {/if}
     </button>
+    <button
+      class="sub-tab"
+      class:sub-tab-active={activeSubTab === 'access'}
+      on:click={() => setSubTab('access')}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+      Access
+    </button>
   </div>
 
   <!-- Tab Content -->
@@ -341,6 +368,118 @@
           </div>
         {:else}
           <div class="cron-empty">No cron tasks yet. Add one above to schedule periodic agent prompts.</div>
+        {/if}
+      </div>
+
+    {:else if activeSubTab === 'access'}
+      <!-- Access Control -->
+      <div class="access-controls">
+        <h3 class="section-title">DM Policy</h3>
+        <div class="policy-options">
+          {#each ['open', 'allowlist', 'pairing'] as policy}
+            <label class="policy-option" class:policy-active={$accessPolicy.dm_policy === policy}>
+              <input
+                type="radio"
+                name="dm_policy"
+                value={policy}
+                checked={$accessPolicy.dm_policy === policy}
+                on:change={() => updateAccessPolicy({ ...$accessPolicy, dm_policy: policy })}
+              />
+              <span class="policy-label">{policy.charAt(0).toUpperCase() + policy.slice(1)}</span>
+              <span class="policy-desc">
+                {#if policy === 'open'}Anyone can message{:else if policy === 'allowlist'}Only approved senders{:else}Require pairing code{/if}
+              </span>
+            </label>
+          {/each}
+        </div>
+
+        {#if $accessPolicy.dm_policy === 'pairing'}
+          <div class="pairing-section">
+            <span class="pairing-label">Pairing Code:</span>
+            <code class="pairing-code">{$accessPolicy.pairing_code || '—'}</code>
+            <button class="action-btn" on:click={generateNewPairingCode}>Regenerate</button>
+          </div>
+        {/if}
+
+        <h3 class="section-title" style="margin-top: 16px;">Group Policy</h3>
+        <div class="policy-options">
+          {#each ['open', 'allowlist'] as policy}
+            <label class="policy-option" class:policy-active={$accessPolicy.group_policy === policy}>
+              <input
+                type="radio"
+                name="group_policy"
+                value={policy}
+                checked={$accessPolicy.group_policy === policy}
+                on:change={() => updateAccessPolicy({ ...$accessPolicy, group_policy: policy })}
+              />
+              <span class="policy-label">{policy.charAt(0).toUpperCase() + policy.slice(1)}</span>
+            </label>
+          {/each}
+        </div>
+
+        <label class="mention-toggle">
+          <input
+            type="checkbox"
+            checked={$accessPolicy.mention_gating}
+            on:change={(e) => updateAccessPolicy({ ...$accessPolicy, mention_gating: e.target.checked })}
+          />
+          Require @mention in groups
+        </label>
+
+        <h3 class="section-title" style="margin-top: 16px;">Known Senders</h3>
+        {#if $accessSenders.length > 0}
+          <div class="sender-list">
+            {#each $accessSenders as sender (sender.id)}
+              <div class="sender-item">
+                <div class="sender-info">
+                  <span class="sender-name">{sender.display_name || sender.id}</span>
+                  <span class="sender-channel">{sender.channel}</span>
+                </div>
+                <span class="sender-status" class:status-approved={sender.status === 'approved'} class:status-blocked={sender.status === 'blocked'} class:status-pending={sender.status === 'pending'}>
+                  {sender.status}
+                </span>
+                <div class="sender-actions">
+                  {#if sender.status !== 'approved'}
+                    <button class="action-btn small-btn" on:click={() => approveSender(sender.id)}>Approve</button>
+                  {/if}
+                  {#if sender.status !== 'blocked'}
+                    <button class="action-btn small-btn danger-btn" on:click={() => blockSender(sender.id)}>Block</button>
+                  {/if}
+                  <button class="action-btn small-btn" on:click={() => removeSender(sender.id)}>Remove</button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="cron-empty">No senders recorded yet.</div>
+        {/if}
+
+        <h3 class="section-title" style="margin-top: 16px;">Channel → Agent Mapping</h3>
+        <div class="cron-form">
+          <input type="text" class="cron-schedule-input" placeholder="channel ID" bind:value={newChannelId} />
+          <input type="text" class="cron-message-input" placeholder="agent name" bind:value={newAgentName} />
+          <button class="action-btn cron-add-btn" disabled={!newChannelId.trim() || !newAgentName.trim()} on:click={() => { setChannelAgentMapping(newChannelId.trim(), newAgentName.trim()); newChannelId = ''; newAgentName = ''; }}>
+            Add
+          </button>
+        </div>
+        {#if $channelAgents.length > 0}
+          <div class="cron-list">
+            {#each $channelAgents as mapping (mapping.channel_id)}
+              <div class="cron-item">
+                <div class="cron-item-info">
+                  <span class="cron-item-schedule">{mapping.channel_id}</span>
+                </div>
+                <div class="cron-item-message">{mapping.agent_name}</div>
+                <button class="cron-remove-btn" on:click={() => removeChannelAgentMapping(mapping.channel_id)} title="Remove mapping">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="cron-empty">No channel-agent mappings. All channels use default routing.</div>
         {/if}
       </div>
 
@@ -984,5 +1123,181 @@
     background: color-mix(in srgb, var(--accent) 12%, transparent);
     border-color: color-mix(in srgb, var(--accent) 25%, transparent);
     color: var(--accent);
+  }
+
+  /* ─── Access Control ─── */
+  .access-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .policy-options {
+    display: flex;
+    gap: 6px;
+  }
+
+  .policy-option {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 14px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    flex: 1;
+    transition: all 0.15s ease;
+  }
+
+  .policy-option:hover {
+    border-color: var(--border-light);
+  }
+
+  .policy-option.policy-active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 5%, var(--bg-secondary));
+  }
+
+  .policy-option input[type="radio"] {
+    display: none;
+  }
+
+  .policy-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .policy-desc {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .pairing-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 4px;
+  }
+
+  .pairing-label {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .pairing-code {
+    font-size: 14px;
+    font-weight: 700;
+    font-family: var(--font-mono, monospace);
+    color: var(--accent);
+    letter-spacing: 2px;
+    user-select: all;
+  }
+
+  .mention-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px 0;
+  }
+
+  .mention-toggle input[type="checkbox"] {
+    accent-color: var(--accent);
+  }
+
+  .sender-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .sender-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .sender-item:hover {
+    border-color: var(--border-light);
+  }
+
+  .sender-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .sender-name {
+    font-size: 12px;
+    color: var(--text-primary);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sender-channel {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  .sender-status {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .status-approved {
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.1);
+  }
+
+  .status-blocked {
+    color: var(--danger);
+    background: rgba(239, 68, 68, 0.1);
+  }
+
+  .status-pending {
+    color: var(--text-muted);
+    background: var(--bg-tertiary);
+  }
+
+  .sender-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .small-btn {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+
+  .danger-btn {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  }
+
+  .danger-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+    border-color: var(--danger);
   }
 </style>

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/user/talon/internal/access"
 	"github.com/user/talon/internal/agent"
 	"github.com/user/talon/internal/browser"
 	"github.com/user/talon/internal/claw"
@@ -58,6 +59,11 @@ type App struct {
 	clawGateway   *claw.Gateway
 	clawHeartbeat *claw.Heartbeat
 	clawScheduler *scheduler.Scheduler
+
+	// Access control manager and app-level config references.
+	accessMgr *access.Manager
+	cfg       *config.Config
+	baseDir   string
 }
 
 // NewApp creates a new App instance.
@@ -94,6 +100,10 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 
+	// Store config and base directory for later use.
+	a.cfg = cfg
+	a.baseDir = baseDir
+
 	// Attempt core initialisation — may fail if no API key is configured yet.
 	if err := a.initCore(cfg, baseDir); err != nil {
 		a.initError = err.Error()
@@ -102,6 +112,16 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	log.Printf("Talon GUI ready (agent=%s, model=%s)", a.agentCfg.Name, a.agentCfg.Model)
+
+	// Initialise access control manager.
+	a.accessMgr = access.NewManager(baseDir, cfg.AccessControl)
+	if cfg.AccessControl.DMPolicy == "pairing" && cfg.AccessControl.PairingCode == "" {
+		code := access.GeneratePairingCode()
+		cfg.AccessControl.PairingCode = code
+		a.accessMgr.SetConfig(cfg.AccessControl)
+		config.Save(baseDir, cfg)
+		log.Printf("[access] generated pairing code: %s", code)
+	}
 
 	// Initialise the Claw event gateway.
 	a.initClaw(cfg)

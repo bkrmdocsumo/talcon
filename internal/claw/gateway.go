@@ -11,6 +11,7 @@ import (
 
 	"github.com/user/talon/internal/agent"
 	"github.com/user/talon/internal/config"
+	"github.com/user/talon/internal/session"
 	"github.com/user/talon/internal/tools"
 )
 
@@ -181,7 +182,19 @@ func (g *Gateway) processEvent(evt AgentEvent) {
 		}
 	}
 
-	result, err := agent.RunAgentTurn(ctx, evt.SessionID, content, agentCfg, deps)
+	// Resolve session ID based on agent's session scope when sender/channel
+	// info is available on the event.
+	resolvedSession := evt.SessionID
+	if evt.SenderID != "" && agentCfg.SessionScope != "" {
+		resolvedSession = session.ResolveSessionID(
+			agentCfg.SessionScope,
+			agentCfg.SessionPrefix,
+			evt.SenderID,
+			evt.ChannelID,
+		)
+	}
+
+	result, err := agent.RunAgentTurn(ctx, resolvedSession, content, agentCfg, deps)
 
 	rec := EventRecord{
 		Event:       evt,

@@ -9,12 +9,15 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/user/talon/internal/access"
 	"github.com/user/talon/internal/agent"
 	"github.com/user/talon/internal/config"
 	"github.com/user/talon/internal/router"
+	"github.com/user/talon/internal/session"
 	"github.com/user/talon/internal/util"
 )
 
@@ -26,7 +29,8 @@ type TelegramNotify func(sessionID string, userText string, replyText string)
 // RunTelegram starts the Telegram bot long-poller. It blocks until ctx is cancelled.
 // If notify is non-nil it is called when a message is received (replyText=="")
 // and when a reply is sent (userText=="").
-func RunTelegram(ctx context.Context, cfg *config.Config, deps agent.Deps, notify TelegramNotify) {
+// accessMgr may be nil, in which case all messages are allowed.
+func RunTelegram(ctx context.Context, cfg *config.Config, deps agent.Deps, notify TelegramNotify, accessMgr *access.Manager) {
 	bot, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
 	if err != nil {
 		safeErr := regexp.MustCompile(`/bot[^/]+/`).ReplaceAllString(err.Error(), "/bot****/")
@@ -101,7 +105,7 @@ func RunTelegram(ctx context.Context, cfg *config.Config, deps agent.Deps, notif
 
 				userID := update.Message.From.ID
 				chatID := update.Message.Chat.ID
-				sessionID := fmt.Sprintf("tg_%d", userID)
+				isGroup := update.Message.Chat.IsGroup() || update.Message.Chat.IsSuperGroup()
 
 				// Determine the text: regular messages use Text, attachments use Caption.
 				text := update.Message.Text
@@ -109,10 +113,68 @@ func RunTelegram(ctx context.Context, cfg *config.Config, deps agent.Deps, notif
 					text = update.Message.Caption
 				}
 
+				// Build sender info for access control.
+				senderID := fmt.Sprintf("telegram:%d", userID)
+				channelID := fmt.Sprintf("telegram:%d", chatID)
+				displayName := update.Message.From.FirstName
+				if update.Message.From.LastName != "" {
+					displayName += " " + update.Message.From.LastName
+				}
+
+				// Access control check.
+				if accessMgr != nil {
+					sender := access.SenderInfo{
+						ID:          senderID,
+						DisplayName: displayName,
+						Channel:     "telegram",
+						IsGroup:     isGroup,
+						GroupID:     fmt.Sprintf("%d", chatID),
+						MessageText: text,
+					}
+					decision := accessMgr.Check(sender)
+					if !decision.Allowed {
+						if decision.PairingReply != "" {
+							msg := tgbotapi.NewMessage(chatID, decision.PairingReply)
+							bot.Send(msg)
+						}
+						log.Printf("[telegram] access denied for %d: %s", userID, decision.Reason)
+						continue
+					}
+
+					// Mention gating for group messages.
+					if isGroup && accessMgr.MentionGating() {
+						botUsername := "@" + bot.Self.UserName
+						if !strings.Contains(text, botUsername) {
+							continue
+						}
+						// Strip the @mention from the text before processing.
+						text = strings.ReplaceAll(text, botUsername, "")
+						text = strings.TrimSpace(text)
+						if text == "" {
+							continue
+						}
+					}
+				}
+
 				log.Printf("[telegram] message from %d: %s", userID, util.Truncate(text, 80))
 
-				// Route to the correct agent.
+				// Route to the correct agent (check channel-agent override first).
 				agentCfg := router.Route(text, cfg)
+				if accessMgr != nil {
+					if override := accessMgr.GetChannelAgent(channelID); override != "" {
+						if aCfg, ok := cfg.Agents[override]; ok {
+							agentCfg = aCfg
+						}
+					}
+				}
+
+				// Resolve session ID based on agent's session scope.
+				sessionID := session.ResolveSessionID(
+					agentCfg.SessionScope,
+					agentCfg.SessionPrefix,
+					senderID,
+					channelID,
+				)
 
 				// Build the content payload for the agent.
 				content, err := buildTelegramContent(bot, update.Message, text)

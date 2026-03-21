@@ -535,6 +535,7 @@
             Changes are saved to <code>~/.talon/exec-approvals.json</code> and take effect immediately.
           </p>
         {/if}
+
       </div>
 
       <div class="modal-footer">
@@ -1120,6 +1121,7 @@
     border-radius: 4px;
     border: 1px solid var(--border);
   }
+
 
   .cmd-list {
     display: flex;

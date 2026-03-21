@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/user/talon/internal/access"
 	"github.com/user/talon/internal/claw"
 	"github.com/user/talon/internal/config"
 	"github.com/user/talon/internal/scheduler"
@@ -481,4 +482,149 @@ func (a *App) emitCronsUpdated() {
 		return
 	}
 	wailsRuntime.EventsEmit(a.ctx, "claw:crons:updated", nil)
+}
+
+// ─── Access Control Management ───
+
+// AccessPolicyInfo is the frontend-friendly representation of the access control config.
+type AccessPolicyInfo struct {
+	DMPolicy      string `json:"dm_policy"`
+	GroupPolicy   string `json:"group_policy"`
+	MentionGating bool   `json:"mention_gating"`
+	PairingCode   string `json:"pairing_code"`
+}
+
+// SenderInfo is the frontend-friendly representation of a known sender.
+type SenderInfo struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	DisplayName string `json:"display_name"`
+	Channel     string `json:"channel"`
+	ApprovedAt  string `json:"approved_at"`
+}
+
+// ChannelAgentMapping maps a channel ID to an agent name.
+type ChannelAgentMapping struct {
+	ChannelID string `json:"channel_id"`
+	AgentName string `json:"agent_name"`
+}
+
+// GetAccessPolicy returns the current access control policy.
+func (a *App) GetAccessPolicy() AccessPolicyInfo {
+	if a.accessMgr == nil {
+		return AccessPolicyInfo{DMPolicy: "open", GroupPolicy: "open"}
+	}
+	cfg := a.accessMgr.Config()
+	return AccessPolicyInfo{
+		DMPolicy:      cfg.DMPolicy,
+		GroupPolicy:   cfg.GroupPolicy,
+		MentionGating: cfg.MentionGating,
+		PairingCode:   cfg.PairingCode,
+	}
+}
+
+// SetAccessPolicy updates the access control policy.
+func (a *App) SetAccessPolicy(policy AccessPolicyInfo) {
+	if a.accessMgr == nil {
+		return
+	}
+	cfg := config.AccessControlConfig{
+		DMPolicy:      policy.DMPolicy,
+		GroupPolicy:   policy.GroupPolicy,
+		MentionGating: policy.MentionGating,
+		PairingCode:   policy.PairingCode,
+	}
+	a.accessMgr.SetConfig(cfg)
+
+	// Persist to app config.
+	if a.cfg != nil {
+		a.cfg.AccessControl = cfg
+		if a.baseDir != "" {
+			config.Save(a.baseDir, a.cfg)
+		}
+	}
+}
+
+// GeneratePairingCode creates a new pairing code and saves it.
+func (a *App) GeneratePairingCode() string {
+	code := access.GeneratePairingCode()
+	if a.accessMgr != nil {
+		cfg := a.accessMgr.Config()
+		cfg.PairingCode = code
+		a.accessMgr.SetConfig(cfg)
+		if a.cfg != nil {
+			a.cfg.AccessControl.PairingCode = code
+			if a.baseDir != "" {
+				config.Save(a.baseDir, a.cfg)
+			}
+		}
+	}
+	return code
+}
+
+// ListAccessSenders returns all known senders with their status.
+func (a *App) ListAccessSenders() []SenderInfo {
+	if a.accessMgr == nil {
+		return []SenderInfo{}
+	}
+	records := a.accessMgr.ListSenders()
+	out := make([]SenderInfo, 0, len(records))
+	for id, rec := range records {
+		out = append(out, SenderInfo{
+			ID:          id,
+			Status:      rec.Status,
+			DisplayName: rec.DisplayName,
+			Channel:     rec.Channel,
+			ApprovedAt:  rec.ApprovedAt,
+		})
+	}
+	return out
+}
+
+// ApproveSender marks a sender as approved.
+func (a *App) ApproveSender(id string) {
+	if a.accessMgr != nil {
+		a.accessMgr.ApproveSender(id)
+	}
+}
+
+// BlockSender marks a sender as blocked.
+func (a *App) BlockSender(id string) {
+	if a.accessMgr != nil {
+		a.accessMgr.BlockSender(id)
+	}
+}
+
+// RemoveAccessSender removes a sender from the access control state.
+func (a *App) RemoveAccessSender(id string) {
+	if a.accessMgr != nil {
+		a.accessMgr.RemoveSender(id)
+	}
+}
+
+// GetChannelAgents returns all channel-agent mappings.
+func (a *App) GetChannelAgents() []ChannelAgentMapping {
+	if a.accessMgr == nil {
+		return []ChannelAgentMapping{}
+	}
+	agents := a.accessMgr.ChannelAgents()
+	out := make([]ChannelAgentMapping, 0, len(agents))
+	for ch, ag := range agents {
+		out = append(out, ChannelAgentMapping{ChannelID: ch, AgentName: ag})
+	}
+	return out
+}
+
+// SetChannelAgent maps a channel to a specific agent.
+func (a *App) SetChannelAgent(channelID string, agentName string) {
+	if a.accessMgr != nil {
+		a.accessMgr.SetChannelAgent(channelID, agentName)
+	}
+}
+
+// RemoveChannelAgent removes a channel-agent mapping.
+func (a *App) RemoveChannelAgent(channelID string) {
+	if a.accessMgr != nil {
+		a.accessMgr.SetChannelAgent(channelID, "")
+	}
 }

@@ -40,6 +40,14 @@ type AgentEvent struct {
 	Timestamp time.Time         `json:"timestamp"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
 	Hidden    bool              `json:"hidden"`
+
+	// SenderID is the canonical sender key (e.g. "telegram:12345").
+	// Used for session scoping and access control logging.
+	SenderID string `json:"sender_id,omitempty"`
+
+	// ChannelID identifies the channel/chat (e.g. "telegram:group:-100123").
+	// Used for per-channel-peer session scoping.
+	ChannelID string `json:"channel_id,omitempty"`
 }
 
 // EventRecord pairs an event with its processing outcome so the UI can

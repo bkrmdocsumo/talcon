@@ -38,6 +38,17 @@ func Route(message string, cfg *config.Config) config.AgentConfig {
 	}
 }
 
+// RouteWithChannelOverride first checks if there's a channel-agent mapping,
+// then falls back to text-based routing.
+func RouteWithChannelOverride(message string, cfg *config.Config, channelAgent string) config.AgentConfig {
+	if channelAgent != "" {
+		if agentCfg, ok := cfg.Agents[channelAgent]; ok {
+			return agentCfg
+		}
+	}
+	return Route(message, cfg)
+}
+
 // StripCommand removes a leading /command prefix from the message so the
 // agent receives clean input.
 func StripCommand(message string) string {

@@ -90,4 +90,12 @@ func RegisterStandardTools(r *Registry, baseDir string) {
 
 	// Cron management tool
 	r.Register(&ManageCronTool{})
+
+	// Notion integration
+	r.Register(NewNotionTool(baseDir))
+
+	// Session tools (agent-to-agent communication)
+	r.Register(&SessionsListTool{})
+	r.Register(&SessionsHistoryTool{})
+	r.Register(&SessionsSendTool{})
 }

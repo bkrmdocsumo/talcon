@@ -14,6 +14,42 @@ type AgentConfig struct {
 	PromptPath     string `json:"prompt_path"`
 	SessionPrefix  string `json:"session_prefix"`
 	EnableThinking bool   `json:"enable_thinking"`
+
+	// Session scoping: "main" (single shared session), "per-peer", "per-channel-peer".
+	SessionScope string `json:"session_scope,omitempty"`
+
+	// Auto-reset: "none" (default), "daily", or a duration like "4h".
+	SessionAutoReset string `json:"session_auto_reset,omitempty"`
+}
+
+// AccessControlConfig defines DM and group access policies.
+type AccessControlConfig struct {
+	// DMPolicy: "open" (default — anyone can message), "allowlist", "pairing".
+	DMPolicy string `json:"dm_policy"`
+
+	// GroupPolicy: "open" (default), "allowlist".
+	GroupPolicy string `json:"group_policy"`
+
+	// MentionGating: if true, bot only responds in groups when @mentioned.
+	MentionGating bool `json:"mention_gating"`
+
+	// PairingCode: auto-generated code shared with trusted users (pairing mode).
+	PairingCode string `json:"pairing_code,omitempty"`
+}
+
+// SenderRecord tracks approval status for a known sender.
+type SenderRecord struct {
+	Status      string `json:"status"`       // "approved", "blocked", "pending"
+	DisplayName string `json:"display_name"`
+	Channel     string `json:"channel"`      // "telegram", "http", "webhook"
+	ApprovedAt  string `json:"approved_at,omitempty"`
+}
+
+// AccessState is the persisted sender-level access control data.
+type AccessState struct {
+	Senders          map[string]SenderRecord `json:"senders"`
+	ChannelAgents    map[string]string       `json:"channel_agents"`
+	ChannelAllowFrom map[string][]string     `json:"channel_allow_from"`
 }
 
 // Config is the top-level application configuration loaded from config.json.
@@ -34,6 +70,12 @@ type Config struct {
 	// Global push-to-talk dictation — hold a modifier key to record, release to transcribe & paste.
 	HotkeyEnabled  bool   `json:"hotkey_enabled"`  // Enable global push-to-talk hotkey
 	HotkeyModifier string `json:"hotkey_modifier"` // "right_option" (default), "left_option", "left_cmd", "right_cmd", "left_ctrl", "right_ctrl"
+
+	// Access control configuration.
+	AccessControl AccessControlConfig `json:"access_control"`
+
+	// Notion integration.
+	NotionToken string `json:"notion_token"`
 }
 
 // TalonDir returns the resolved path to ~/.talon/.
@@ -241,6 +283,12 @@ func Load(base string) (*Config, error) {
 	if cfg.Agents == nil {
 		cfg.Agents = make(map[string]AgentConfig)
 	}
+	if cfg.AccessControl.DMPolicy == "" {
+		cfg.AccessControl.DMPolicy = "open"
+	}
+	if cfg.AccessControl.GroupPolicy == "" {
+		cfg.AccessControl.GroupPolicy = "open"
+	}
 
 	return &cfg, nil
 }
@@ -276,6 +324,49 @@ func SaveExecApprovals(base string, approvals *ExecApprovals) error {
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write exec-approvals.json: %w", err)
+	}
+	return nil
+}
+
+// LoadAccessState reads access_control.json from the base directory.
+func LoadAccessState(base string) (*AccessState, error) {
+	path := filepath.Join(base, "access_control.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &AccessState{
+				Senders:          make(map[string]SenderRecord),
+				ChannelAgents:    make(map[string]string),
+				ChannelAllowFrom: make(map[string][]string),
+			}, nil
+		}
+		return nil, fmt.Errorf("read access_control.json: %w", err)
+	}
+	var state AccessState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("decode access_control.json: %w", err)
+	}
+	if state.Senders == nil {
+		state.Senders = make(map[string]SenderRecord)
+	}
+	if state.ChannelAgents == nil {
+		state.ChannelAgents = make(map[string]string)
+	}
+	if state.ChannelAllowFrom == nil {
+		state.ChannelAllowFrom = make(map[string][]string)
+	}
+	return &state, nil
+}
+
+// SaveAccessState writes access_control.json to the base directory.
+func SaveAccessState(base string, state *AccessState) error {
+	path := filepath.Join(base, "access_control.json")
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal access_control.json: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write access_control.json: %w", err)
 	}
 	return nil
 }

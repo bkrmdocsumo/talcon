@@ -422,6 +422,7 @@ function handleClawStreamEvent(data) {
 
 // ─── Initialise on first load ───
 export async function initClawData() {
-  await Promise.all([refreshClawEvents(), refreshClawConfig(), refreshClawStats(), refreshClawCrons()]);
+  const { initAccessData } = await import('./accessStore.js');
+  await Promise.all([refreshClawEvents(), refreshClawConfig(), refreshClawStats(), refreshClawCrons(), initAccessData()]);
   initClawListener();
 }
